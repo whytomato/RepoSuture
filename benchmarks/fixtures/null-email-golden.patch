@@ -1,0 +1,13 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/UserRegistrationService.java b/src/main/java/dev/patchpilot/fixture/UserRegistrationService.java
+--- a/src/main/java/dev/patchpilot/fixture/UserRegistrationService.java
++++ b/src/main/java/dev/patchpilot/fixture/UserRegistrationService.java
+@@ -4,7 +4,7 @@ import java.util.Locale;
+ 
+ public final class UserRegistrationService {
+     public RegisteredUser register(String username, String email) {
+-        if (email.isBlank()) {
++        if (email == null || email.isBlank()) {
+             throw new InvalidEmailException("email must not be blank");
+         }
+         return new RegisteredUser(username.trim(), email.trim().toLowerCase(Locale.ROOT));
+

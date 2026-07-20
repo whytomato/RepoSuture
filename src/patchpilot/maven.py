@@ -1,0 +1,385 @@
+"""Maven/JUnit execution with Surefire evidence as the test-result authority."""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import xml.etree.ElementTree as ElementTree
+from dataclasses import dataclass
+from pathlib import Path
+
+from patchpilot.case_spec import TargetTest
+from patchpilot.process import ProcessResult, ProcessRunner
+from patchpilot.reporting import TestOutcome, TestResultReport
+from patchpilot.workspace import PathSecurityError, safe_worktree_path
+
+MAX_SUREFIRE_REPORT_BYTES = 5 * 1024 * 1024
+MAX_SUREFIRE_TOTAL_BYTES = 50 * 1024 * 1024
+MAX_SUREFIRE_REPORT_FILES = 1_000
+
+
+class MavenInfrastructureError(RuntimeError):
+    """Raised when Maven or its test evidence cannot be used safely."""
+
+
+@dataclass(frozen=True, slots=True)
+class MavenExecution:
+    process: ProcessResult
+    outcome: TestOutcome
+    test_observed: bool
+    infrastructure_error: str | None = None
+    tests_executed: int = 0
+    test_failures: int = 0
+    tests_skipped: int = 0
+    surefire_report_files: int = 0
+    target_found: bool = False
+
+    def as_report(self) -> TestResultReport:
+        return TestResultReport(
+            outcome=self.outcome,
+            command=list(self.process.command),
+            exit_code=self.process.exit_code,
+            duration=self.process.duration_seconds,
+            timed_out=self.process.timed_out,
+            test_observed=self.test_observed,
+            stdout_truncated=self.process.stdout_truncated,
+            stderr_truncated=self.process.stderr_truncated,
+            stdout_bytes_seen=self.process.stdout_bytes_seen,
+            stderr_bytes_seen=self.process.stderr_bytes_seen,
+            stdout_sha256=self.process.stdout_sha256,
+            stderr_sha256=self.process.stderr_sha256,
+            tests_executed=self.tests_executed,
+            test_failures=self.test_failures,
+            tests_skipped=self.tests_skipped,
+            surefire_report_files=self.surefire_report_files,
+            target_found=self.target_found,
+            infrastructure_error=self.infrastructure_error,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class _SurefireEvidence:
+    executed: int
+    failures: int
+    target_found: bool
+    target_executed: bool
+    target_failed: bool
+    error: str | None = None
+    skipped: int = 0
+    report_files: int = 0
+
+
+class MavenRunner:
+    """Run structured Maven goals and interpret JUnit results from Surefire XML."""
+
+    def __init__(self, runner: ProcessRunner) -> None:
+        self.runner = runner
+
+    def target_command(self, worktree: Path, target: TargetTest) -> list[str]:
+        return [
+            self._maven_executable(worktree),
+            "-q",
+            f"-Dtest={target.maven_selector}",
+            "test",
+        ]
+
+    def regression_command(self, worktree: Path) -> list[str]:
+        return [self._maven_executable(worktree), "-q", "test"]
+
+    def run_target(
+        self,
+        worktree: Path,
+        target: TargetTest,
+        *,
+        timeout_seconds: float,
+    ) -> MavenExecution:
+        self._clear_surefire_reports(worktree)
+        process = self.runner.run(
+            self.target_command(worktree, target),
+            cwd=worktree,
+            timeout_seconds=timeout_seconds,
+        )
+        return self.interpret_target_process(process, worktree, target)
+
+    def run_regression(
+        self,
+        worktree: Path,
+        *,
+        timeout_seconds: float,
+    ) -> MavenExecution:
+        self._clear_surefire_reports(worktree)
+        process = self.runner.run(
+            self.regression_command(worktree),
+            cwd=worktree,
+            timeout_seconds=timeout_seconds,
+        )
+        return self.interpret_regression_process(process, worktree)
+
+    def interpret_target_process(
+        self,
+        process: ProcessResult,
+        worktree: Path,
+        target: TargetTest,
+    ) -> MavenExecution:
+        terminal = self._terminal_process_outcome(process)
+        if terminal is not None:
+            return terminal
+
+        evidence = self._read_surefire_evidence(worktree, target)
+        if evidence.error is not None:
+            return self._infrastructure(process, evidence.error, evidence)
+        if process.exit_code == 0 and evidence.target_executed and not evidence.target_failed:
+            return self._with_evidence(process, TestOutcome.PASS, evidence)
+        if process.exit_code != 0 and evidence.target_executed and evidence.target_failed:
+            return self._with_evidence(process, TestOutcome.FAIL, evidence)
+
+        if evidence.target_found and not evidence.target_executed:
+            detail = "target JUnit test was skipped rather than executed"
+        elif not evidence.target_found:
+            detail = "matching target JUnit result was not found in Surefire reports"
+        else:
+            detail = "Maven exit code and target JUnit result were inconsistent"
+        return self._infrastructure(process, detail, evidence)
+
+    def interpret_regression_process(
+        self,
+        process: ProcessResult,
+        worktree: Path,
+    ) -> MavenExecution:
+        terminal = self._terminal_process_outcome(process)
+        if terminal is not None:
+            return terminal
+
+        evidence = self._read_surefire_evidence(worktree, target=None)
+        if evidence.error is not None:
+            return self._infrastructure(process, evidence.error, evidence)
+        if process.exit_code == 0 and evidence.executed > 0 and evidence.failures == 0:
+            return self._with_evidence(process, TestOutcome.PASS, evidence)
+        if process.exit_code != 0 and evidence.executed > 0 and evidence.failures > 0:
+            return self._with_evidence(process, TestOutcome.FAIL, evidence)
+        if evidence.executed == 0:
+            detail = "no executed JUnit tests were found in Surefire reports"
+        else:
+            detail = "Maven exit code and regression JUnit results were inconsistent"
+        return self._infrastructure(process, detail, evidence)
+
+    @staticmethod
+    def format_log(execution: MavenExecution) -> str:
+        process = execution.process
+        header = {
+            "command": list(process.command),
+            "cwd": str(process.cwd),
+            "exit_code": process.exit_code,
+            "duration": process.duration_seconds,
+            "timed_out": process.timed_out,
+            "outcome": execution.outcome.value,
+            "test_observed": execution.test_observed,
+            "stdout_truncated": process.stdout_truncated,
+            "stderr_truncated": process.stderr_truncated,
+            "infrastructure_error": execution.infrastructure_error,
+            "tests_executed": execution.tests_executed,
+            "test_failures": execution.test_failures,
+            "tests_skipped": execution.tests_skipped,
+            "surefire_report_files": execution.surefire_report_files,
+            "target_found": execution.target_found,
+        }
+        return (
+            json.dumps(header, ensure_ascii=False, sort_keys=True)
+            + "\n\n[stdout]\n"
+            + process.stdout
+            + "\n\n[stderr]\n"
+            + process.stderr
+            + "\n"
+        )
+
+    def _maven_executable(self, worktree: Path) -> str:
+        wrapper_name = "mvnw.cmd" if os.name == "nt" else "mvnw"
+        wrapper_candidate = worktree / wrapper_name
+        if wrapper_candidate.exists() or wrapper_candidate.is_symlink():
+            try:
+                wrapper = safe_worktree_path(worktree, wrapper_name)
+            except PathSecurityError as exc:
+                raise MavenInfrastructureError(f"unsafe Maven Wrapper path: {exc}") from exc
+            if not wrapper.is_file():
+                raise MavenInfrastructureError(f"Maven Wrapper is not a file: {wrapper}")
+            return str(wrapper)
+        return "mvn"
+
+    @staticmethod
+    def _terminal_process_outcome(process: ProcessResult) -> MavenExecution | None:
+        if process.infrastructure_error is not None:
+            return MavenExecution(
+                process,
+                TestOutcome.INFRASTRUCTURE_ERROR,
+                test_observed=False,
+                infrastructure_error=process.infrastructure_error,
+            )
+        if process.timed_out:
+            return MavenExecution(
+                process,
+                TestOutcome.TIMEOUT,
+                test_observed=False,
+            )
+        return None
+
+    @staticmethod
+    def _infrastructure(
+        process: ProcessResult,
+        detail: str,
+        evidence: _SurefireEvidence | None = None,
+    ) -> MavenExecution:
+        if evidence is None:
+            return MavenExecution(
+                process,
+                TestOutcome.INFRASTRUCTURE_ERROR,
+                test_observed=False,
+                infrastructure_error=detail,
+            )
+        return MavenExecution(
+            process,
+            TestOutcome.INFRASTRUCTURE_ERROR,
+            test_observed=False,
+            infrastructure_error=detail,
+            tests_executed=evidence.executed,
+            test_failures=evidence.failures,
+            tests_skipped=evidence.skipped,
+            surefire_report_files=evidence.report_files,
+            target_found=evidence.target_found,
+        )
+
+    @staticmethod
+    def _with_evidence(
+        process: ProcessResult,
+        outcome: TestOutcome,
+        evidence: _SurefireEvidence,
+    ) -> MavenExecution:
+        return MavenExecution(
+            process,
+            outcome,
+            test_observed=True,
+            tests_executed=evidence.executed,
+            test_failures=evidence.failures,
+            tests_skipped=evidence.skipped,
+            surefire_report_files=evidence.report_files,
+            target_found=evidence.target_found,
+        )
+
+    def _clear_surefire_reports(self, worktree: Path) -> None:
+        try:
+            reports = safe_worktree_path(worktree, "target/surefire-reports")
+            if reports.is_symlink():
+                raise MavenInfrastructureError(
+                    f"refusing to remove symlinked Surefire report directory: {reports}"
+                )
+            if reports.exists():
+                shutil.rmtree(reports)
+        except (OSError, PathSecurityError) as exc:
+            raise MavenInfrastructureError(f"unable to clear Surefire reports: {exc}") from exc
+
+    def _read_surefire_evidence(
+        self,
+        worktree: Path,
+        target: TargetTest | None,
+    ) -> _SurefireEvidence:
+        try:
+            reports = safe_worktree_path(worktree, "target/surefire-reports")
+        except PathSecurityError as exc:
+            return _SurefireEvidence(0, 0, False, False, False, str(exc))
+        if not reports.is_dir():
+            return _SurefireEvidence(0, 0, False, False, False)
+
+        executed = 0
+        failures = 0
+        target_found = False
+        target_executed = False
+        target_failed = False
+        skipped_count = 0
+        total_size = 0
+        report_files: list[Path] = []
+        try:
+            for report_file in reports.glob("TEST-*.xml"):
+                report_files.append(report_file)
+                if len(report_files) > MAX_SUREFIRE_REPORT_FILES:
+                    return _SurefireEvidence(
+                        executed,
+                        failures,
+                        target_found,
+                        target_executed,
+                        target_failed,
+                        "Surefire XML report count exceeded the configured limit",
+                        skipped_count,
+                        len(report_files),
+                    )
+            report_files.sort()
+            for report_file in report_files:
+                safe_report = safe_worktree_path(
+                    worktree, report_file.relative_to(worktree)
+                )
+                size = safe_report.stat().st_size
+                total_size += size
+                if size > MAX_SUREFIRE_REPORT_BYTES or total_size > MAX_SUREFIRE_TOTAL_BYTES:
+                    return _SurefireEvidence(
+                        executed,
+                        failures,
+                        target_found,
+                        target_executed,
+                        target_failed,
+                        "Surefire XML reports exceeded the configured size limit",
+                        skipped_count,
+                        len(report_files),
+                    )
+                root = ElementTree.parse(safe_report).getroot()
+                for testcase in root.iter():
+                    if testcase.tag.rsplit("}", maxsplit=1)[-1] != "testcase":
+                        continue
+                    skipped = any(
+                        child.tag.rsplit("}", maxsplit=1)[-1] == "skipped"
+                        for child in testcase
+                    )
+                    failed = any(
+                        child.tag.rsplit("}", maxsplit=1)[-1] in {"failure", "error"}
+                        for child in testcase
+                    )
+                    if not skipped:
+                        executed += 1
+                    else:
+                        skipped_count += 1
+                    if failed:
+                        failures += 1
+                    if target is not None and self._matches_target(testcase.attrib, target):
+                        target_found = True
+                        target_executed = not skipped
+                        target_failed = failed
+        except (OSError, ElementTree.ParseError, PathSecurityError) as exc:
+            return _SurefireEvidence(
+                executed,
+                failures,
+                target_found,
+                target_executed,
+                target_failed,
+                f"unable to read Surefire XML evidence: {type(exc).__name__}: {exc}",
+                skipped_count,
+                len(report_files),
+            )
+        return _SurefireEvidence(
+            executed,
+            failures,
+            target_found,
+            target_executed,
+            target_failed,
+            skipped=skipped_count,
+            report_files=len(report_files),
+        )
+
+    @staticmethod
+    def _matches_target(attributes: dict[str, str], target: TargetTest) -> bool:
+        class_name = attributes.get("classname", "")
+        method_name = attributes.get("name", "")
+        expected_class = target.class_name
+        class_matches = (
+            class_name == expected_class
+            if "." in expected_class
+            else class_name.rsplit(".", maxsplit=1)[-1] == expected_class
+        )
+        return class_matches and method_name == target.method_name

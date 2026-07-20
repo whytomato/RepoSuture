@@ -1,0 +1,15 @@
+schema_version: 1
+id: null-email-missing-test
+repository: ../fixtures/null-email-repo
+base_commit: 5f31109dd8742b5515baae16c9f7eefb0ed3deba
+issue_title: Deliberate audit failure for a missing target selector
+issue_description: >-
+  This audit-only Case intentionally selects a nonexistent method so the CLI failure
+  path, artifacts, exit code, and original-repository protection can be verified.
+target_test:
+  class_name: dev.patchpilot.fixture.UserRegistrationServiceTest
+  method_name: methodThatDoesNotExist
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: ../fixtures/null-email-golden.patch
+expected_baseline_failure: test_failure
