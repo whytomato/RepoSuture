@@ -189,6 +189,27 @@ class PatchAttemptReport(BaseModel):
     file_classifications: dict[str, Classification] = Field(default_factory=dict)
     accepted: bool
     equivalent_to_previous: bool = False
+    original_patch_sha256: Sha256 | None = None
+    normalized_patch_sha256: Sha256 | None = None
+    normalization_occurred: bool = False
+    normalization_operations: list[str] = Field(default_factory=list)
+    parsed_paths: list[str] = Field(default_factory=list)
+    operation_types: list[str] = Field(default_factory=list)
+    validation_result: str | None = None
+    recount_used: bool = False
+    error_code: str | None = None
+    git_diagnostic: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=2_000)
+    ] | None = None
+    strict_git_diagnostic: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=2_000)
+    ] | None = None
+    recount_git_diagnostic: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=2_000)
+    ] | None = None
+    policy_diagnostic: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=2_000)
+    ] | None = None
     failure_reason: Annotated[
         str, StringConstraints(strict=True, min_length=1, max_length=4_000)
     ] | None = None

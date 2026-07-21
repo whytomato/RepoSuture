@@ -8,7 +8,7 @@ import pytest
 import yaml
 
 from patchpilot.agent import AgentResponse, FakeLLM, ToolCall
-from patchpilot.process import ProcessRunner
+from patchpilot.process import ProcessResult, ProcessRunner
 from patchpilot.repair import repair_case
 from patchpilot.reporting import FinalStatus, TestOutcome
 
@@ -410,6 +410,144 @@ def test_malformed_tool_input_is_structured_and_loop_can_recover(tmp_path: Path)
     assert report.patch_attempts[1].accepted is True
     trace = Path(report.artifacts["trace"]).read_text(encoding="utf-8")
     assert "INVALID_ARGUMENTS" in trace
+    assert _git_status(repository)[1] == ""
+
+
+@pytest.mark.integration
+def test_missing_git_header_rejection_then_corrected_patch_resolves_with_real_maven(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    golden = GOLDEN_PATCH.read_text(encoding="utf-8")
+    headerless = golden.split("\n", maxsplit=1)[1]
+    ambiguous_headerless = headerless + headerless
+    fake = FakeLLM(
+        [
+            AgentResponse.request_tool(
+                ToolCall(
+                    call_id="read-before-patch-1",
+                    name="read_file",
+                    arguments={"path": SOURCE_PATH},
+                )
+            ),
+            _patch_call("missing-header-2", ambiguous_headerless),
+            _patch_call("corrected-patch-3", headerless),
+        ]
+    )
+
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        llm_client=fake,
+        max_patch_attempts=2,
+    )
+
+    assert report.final_status is FinalStatus.RESOLVED
+    assert report.total_tool_calls == 3
+    assert report.total_patch_attempts == 2
+    assert report.patch_attempts[0].accepted is False
+    assert report.patch_attempts[0].error_code == "PATCH_GIT_HEADER_MISSING"
+    assert report.patch_attempts[1].accepted is True
+    assert report.patch_attempts[1].normalization_occurred is True
+    assert report.patch_attempts[1].normalization_operations == [
+        "SYNTHESIZED_SINGLE_FILE_GIT_HEADER"
+    ]
+    assert report.patch_attempts[1].original_patch_sha256 != (
+        report.patch_attempts[1].normalized_patch_sha256
+    )
+    assert report.target_test_execution_count == 2
+    assert report.patched_target_test_result.outcome is TestOutcome.PASS
+    assert report.regression_execution_count == 1
+    assert report.regression_result.outcome is TestOutcome.PASS
+    trace_events = [
+        json.loads(line)
+        for line in Path(report.artifacts["trace"]).read_text(encoding="utf-8").splitlines()
+    ]
+    first_rejection = next(
+        index
+        for index, event in enumerate(trace_events)
+        if event["event_type"] == "patch_attempted" and event["status"] == "REJECTED"
+    )
+    next_patch = next(
+        index
+        for index, event in enumerate(trace_events[first_rejection + 1 :], first_rejection + 1)
+        if event["event_type"] == "patch_attempted"
+    )
+    assert not any(
+        event["event_type"] in {"target_test_completed", "regression_test_completed"}
+        for event in trace_events[first_rejection + 1 : next_patch]
+    )
+    assert _git_status(repository)[1] == ""
+
+
+class RollbackFailureRunner(ProcessRunner):
+    def __init__(self) -> None:
+        super().__init__()
+        self.final_diff_failed = False
+
+    def run(
+        self,
+        command: list[str] | tuple[str, ...],
+        *,
+        cwd: Path,
+        timeout_seconds: float,
+        input_bytes: bytes | None = None,
+    ) -> ProcessResult:
+        current = tuple(command)
+        if current == ("git", "diff", "--binary", "--no-ext-diff", "--") and not (
+            self.final_diff_failed
+        ):
+            self.final_diff_failed = True
+            return _failed_process(current, cwd, "injected final diff failure")
+        if self.final_diff_failed and current[:3] == ("git", "reset", "--hard"):
+            return _failed_process(current, cwd, "injected rollback failure")
+        return super().run(
+            command,
+            cwd=cwd,
+            timeout_seconds=timeout_seconds,
+            input_bytes=input_bytes,
+        )
+
+
+def _failed_process(command: tuple[str, ...], cwd: Path, detail: str) -> ProcessResult:
+    return ProcessResult(
+        command=command,
+        cwd=cwd,
+        exit_code=1,
+        duration_seconds=0.01,
+        stdout="",
+        stderr=detail,
+        timed_out=False,
+        stdout_truncated=False,
+        stderr_truncated=False,
+        stdout_bytes_seen=0,
+        stderr_bytes_seen=len(detail),
+    )
+
+
+@pytest.mark.integration
+def test_rollback_failure_stops_repair_on_unknown_worktree_state(tmp_path: Path) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    fake = FakeLLM(
+        [
+            _patch_call("rollback-failure-1", GOLDEN_PATCH.read_text(encoding="utf-8")),
+            AgentResponse.finish("must not be reached"),
+        ]
+    )
+
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        llm_client=fake,
+        process_runner=RollbackFailureRunner(),
+    )
+
+    assert report.final_status is FinalStatus.INFRASTRUCTURE_ERROR
+    assert report.total_patch_attempts == 1
+    assert report.patch_attempts[0].error_code == "PATCH_ROLLBACK_FAILED"
+    assert report.patched_target_test_result.outcome is TestOutcome.NOT_RUN
+    assert report.regression_result.outcome is TestOutcome.NOT_RUN
+    assert fake.chat_count == 1
     assert _git_status(repository)[1] == ""
 
 

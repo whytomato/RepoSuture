@@ -8,6 +8,8 @@ from typing import Annotated, Any, Literal, Protocol, Self
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
+from patchpilot.patching import PatchErrorCode
+
 Identifier = Annotated[
     str,
     StringConstraints(
@@ -51,7 +53,7 @@ class ToolError(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    code: ToolErrorCode
+    code: ToolErrorCode | PatchErrorCode
     message: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=4_000)]
 
 

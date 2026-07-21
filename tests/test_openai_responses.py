@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from patchpilot.agent.base import (
     AgentMessage,
     ToolCall,
+    ToolError,
     ToolErrorCode,
     ToolResult,
     ToolSpec,
@@ -24,7 +25,7 @@ from patchpilot.agent.tools import (
     create_patchpilot_tool_executor,
 )
 from patchpilot.case_spec import TargetTest
-from patchpilot.models.config import OpenAIModelConfig
+from patchpilot.models.config import OpenAIModelConfig, load_openai_model_config
 from patchpilot.models.openai_responses import (
     ModelAPIError,
     ModelConfigurationError,
@@ -32,6 +33,7 @@ from patchpilot.models.openai_responses import (
     OpenAIResponsesClient,
     strict_function_tool,
 )
+from patchpilot.patching import PatchErrorCode
 from patchpilot.process import ProcessRunner
 
 
@@ -107,6 +109,70 @@ def _config(*, retries: int = 2) -> OpenAIModelConfig:
         max_retained_model_output_bytes=32768,
         max_retained_tool_output_bytes=32768,
     )
+
+
+def test_environment_loader_accepts_plaintext_api_key() -> None:
+    config = load_openai_model_config(
+        environ={
+            "OPENAI_API_KEY": "openrouter-test-key",
+            "PATCHPILOT_MODEL": "openai/o4-mini",
+        }
+    )
+
+    assert config.api_key.get_secret_value() == "openrouter-test-key"
+    assert config.model == "openai/o4-mini"
+
+
+def test_environment_loader_distinguishes_explicit_openrouter_endpoint() -> None:
+    config = load_openai_model_config(
+        environ={
+            "OPENAI_API_KEY": "openrouter-test-key",
+            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+            "PATCHPILOT_MODEL": "z-ai/glm-5.2",
+            "OPENROUTER_API_KEY": "must-not-be-read",
+        }
+    )
+
+    assert config.base_url == "https://openrouter.ai/api/v1"
+    assert config.provider_name == "openrouter"
+    assert config.api_key.get_secret_value() == "openrouter-test-key"
+
+
+def test_environment_loader_does_not_accept_undocumented_key_alias() -> None:
+    with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+        load_openai_model_config(
+            environ={
+                "OPENROUTER_API_KEY": "must-not-be-read",
+                "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+                "PATCHPILOT_MODEL": "z-ai/glm-5.2",
+            }
+        )
+
+
+def test_sdk_client_receives_explicit_endpoint_without_exposing_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    def construct(**kwargs: Any) -> _FakeSDK:
+        captured.update(kwargs)
+        return _FakeSDK([])
+
+    monkeypatch.setattr(openai, "OpenAI", construct)
+    config = load_openai_model_config(
+        environ={
+            "OPENAI_API_KEY": "openrouter-test-key",
+            "OPENAI_BASE_URL": "https://openrouter.ai/api/v1",
+            "PATCHPILOT_MODEL": "z-ai/glm-5.2",
+        }
+    )
+
+    client = OpenAIResponsesClient(config=config)
+
+    assert client.config.provider_name == "openrouter"
+    assert captured["base_url"] == "https://openrouter.ai/api/v1"
+    assert captured["api_key"] == "openrouter-test-key"
+    assert "openrouter-test-key" not in repr(client.config)
 
 
 def _function_response(*, arguments: str = '{"query":"email","path":null}') -> _FakeResponse:
@@ -229,6 +295,77 @@ def test_continuation_preserves_all_output_and_matches_function_call_id() -> Non
     assert '"success":true' in tool_outputs[0]["output"]
     assert second.finish_requested is True
     assert second.message == "Inspected."
+
+
+def test_openrouter_next_request_contains_structured_patch_rejection() -> None:
+    first_response = _FakeResponse(
+        output=[
+            {
+                "id": "fc_patch_1",
+                "type": "function_call",
+                "call_id": "patch_call_1",
+                "name": "apply_patch",
+                "arguments": '{"patch":"@@ -1 +1 @@\\n-old\\n+new\\n"}',
+                "status": "completed",
+            }
+        ]
+    )
+    sdk = _FakeSDK(
+        [
+            first_response,
+            _FakeResponse(output=[], output_text="Stopping after feedback."),
+        ]
+    )
+    config = _config().model_copy(
+        update={"base_url": "https://openrouter.ai/api/v1"}
+    )
+    client = OpenAIResponsesClient(config=config, sdk_client=sdk)
+    user = AgentMessage(role="user", content="Repair the defect.")
+    first = client.chat([user], [_tool_spec()])
+    assert first.provider == "openrouter"
+    rejection = ToolResult(
+        call_id="patch_call_1",
+        tool_name="apply_patch",
+        success=False,
+        output={
+            "status": "rejected",
+            "error_code": "PATCH_FILE_HEADERS_MISSING",
+            "message": "The patch is missing file headers.",
+            "patch_attempts_remaining": 1,
+            "worktree_modified": False,
+        },
+        error=ToolError(
+            code=PatchErrorCode.PATCH_FILE_HEADERS_MISSING,
+            message="The patch is missing file headers.",
+        ),
+    )
+
+    client.chat(
+        [
+            user,
+            AgentMessage(role="assistant", tool_call=first.tool_call),
+            AgentMessage(role="tool", tool_result=rejection),
+        ],
+        [_tool_spec()],
+        continuation=first.continuation,
+    )
+
+    second_request = sdk.responses.calls[1]
+    assert "previous_response_id" not in second_request
+    assert any(
+        item.get("type") == "function_call" and item.get("call_id") == "patch_call_1"
+        for item in second_request["input"]
+    )
+    outputs = [
+        item
+        for item in second_request["input"]
+        if item.get("type") == "function_call_output"
+    ]
+    assert len(outputs) == 1
+    serialized = outputs[0]["output"]
+    assert '"error_code":"PATCH_FILE_HEADERS_MISSING"' in serialized
+    assert '"patch_attempts_remaining":1' in serialized
+    assert '"worktree_modified":false' in serialized
 
 
 def test_malformed_function_arguments_become_a_structured_tool_error() -> None:

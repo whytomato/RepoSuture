@@ -21,6 +21,7 @@ from patchpilot.agent import (
 )
 from patchpilot.case_spec import TargetTest
 from patchpilot.maven import MavenRunner
+from patchpilot.patching import PatchErrorCode
 from patchpilot.process import ProcessRunner
 from patchpilot.reporting import TestOutcome
 from patchpilot.workspace import GitWorktree
@@ -95,6 +96,110 @@ def _state(*, max_iterations: int = 8, max_tool_calls: int = 8) -> AgentState:
         max_iterations=max_iterations,
         max_tool_calls=max_tool_calls,
     )
+
+
+@pytest.mark.integration
+def test_apply_patch_rejection_returns_actionable_bounded_feedback(
+    tmp_path: Path,
+) -> None:
+    runner = ProcessRunner()
+    repository, commit = _initialize_repository(tmp_path)
+    with tempfile.TemporaryDirectory(prefix="ppa-feedback-") as worktrees_root:
+        manager = GitWorktree(
+            repository=repository,
+            base_commit=commit,
+            runner=runner,
+            worktrees_root=Path(worktrees_root),
+        )
+        with manager as worktree:
+            environment = PatchPilotToolEnvironment(
+                worktree=worktree,
+                target_test=TARGET,
+                target_test_timeout_seconds=300,
+                process_runner=runner,
+                production_java_only=True,
+                max_patch_attempts=2,
+            )
+            executor = create_patchpilot_tool_executor(environment)
+            malformed = "@@ -1 +1 @@\n-old\n+new\n"
+
+            result = executor.execute(
+                ToolCall(
+                    call_id="bad-patch-1",
+                    name="apply_patch",
+                    arguments={"patch": malformed},
+                )
+            )
+
+            assert result.success is False
+            assert result.error is not None
+            assert result.error.code is PatchErrorCode.PATCH_FILE_HEADERS_MISSING
+            assert result.output is not None
+            assert result.output["status"] == "rejected"
+            assert result.output["error_code"] == "PATCH_FILE_HEADERS_MISSING"
+            assert result.output["worktree_modified"] is False
+            assert result.output["patch_attempts_remaining"] == 1
+            assert result.output["required_format"][0] == "diff --git a/<path> b/<path>"
+            assert any("leading space" in rule for rule in result.output["rules"])
+            assert len(str(result.output)) < 8_000
+            assert environment.patch_attempts[0].accepted is False
+            assert environment.patch_attempts[0].error_code is (
+                PatchErrorCode.PATCH_FILE_HEADERS_MISSING
+            )
+            assert _git(runner, worktree, "status", "--porcelain=v1") == ""
+
+
+@pytest.mark.integration
+def test_patch_diagnostic_redacts_credential_shaped_text(tmp_path: Path) -> None:
+    runner = ProcessRunner()
+    repository, commit = _initialize_repository(tmp_path)
+    secret = "sk-or-v1-" + "sentinelcredentialvalue"
+    with tempfile.TemporaryDirectory(prefix="ppa-secret-") as worktrees_root:
+        manager = GitWorktree(
+            repository=repository,
+            base_commit=commit,
+            runner=runner,
+            worktrees_root=Path(worktrees_root),
+        )
+        with manager as worktree:
+            environment = PatchPilotToolEnvironment(
+                worktree=worktree,
+                target_test=TARGET,
+                target_test_timeout_seconds=300,
+                process_runner=runner,
+                production_java_only=True,
+                max_patch_attempts=2,
+            )
+            result = create_patchpilot_tool_executor(environment).execute(
+                ToolCall(
+                    call_id="secret-patch-1",
+                    name="apply_patch",
+                    arguments={
+                        "patch": (
+                            f"diff --git a/../{secret}.java b/../{secret}.java\n"
+                            f"--- a/../{secret}.java\n"
+                            f"+++ b/../{secret}.java\n"
+                            "@@ -1 +1 @@\n-old\n+new\n"
+                        )
+                    },
+                )
+            )
+
+            assert secret not in result.model_dump_json()
+            assert "<redacted>" in result.model_dump_json()
+
+
+def test_apply_patch_tool_description_contains_a_safe_complete_example(
+    tmp_path: Path,
+) -> None:
+    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    description = next(spec.description for spec in executor.specs if spec.name == "apply_patch")
+
+    assert "Return only the Patch" in description
+    assert "do not use Markdown code fences" in description
+    assert "diff --git a/src/main/java/example/Example.java" in description
+    assert "@@ -1,3 +1,3 @@" in description
+    assert " public class Example {" in description
 
 
 @pytest.mark.integration

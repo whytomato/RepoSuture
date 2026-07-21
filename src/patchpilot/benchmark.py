@@ -161,9 +161,15 @@ def _reproducibility_metadata(
         else "unavailable"
     )
     try:
-        openai_version = importlib.metadata.version("openai") if provider == "openai" else None
+        openai_version = (
+            importlib.metadata.version("openai")
+            if provider in {"openai", "openrouter"}
+            else None
+        )
     except importlib.metadata.PackageNotFoundError:
-        openai_version = "not installed" if provider == "openai" else None
+        openai_version = (
+            "not installed" if provider in {"openai", "openrouter"} else None
+        )
     repository = suite.cases[0].agent_case.repository
     return ReproducibilityMetadata(
         patchpilot_git_commit=commit,
@@ -622,6 +628,14 @@ def run_benchmark(
                 break
         if stop:
             break
+    summary_provider_values = sorted({record.provider for record in records})
+    summary_provider = (
+        summary_provider_values[0]
+        if len(summary_provider_values) == 1
+        else ",".join(summary_provider_values)[:64]
+        if summary_provider_values
+        else provider
+    )
     summary_model_values = sorted({record.model for record in records})
     summary_model = (
         summary_model_values[0]
@@ -647,7 +661,7 @@ def run_benchmark(
     reproducibility = _reproducibility_metadata(
         suite=suite,
         artifacts_root=root,
-        provider=provider,
+        provider=summary_provider,
         model=summary_model,
         cli_arguments=cli_arguments,
         budget_values=budgets,
@@ -658,7 +672,7 @@ def run_benchmark(
         suite_id=suite.manifest.suite_id,
         fingerprint=suite.fingerprint,
         execution_mode=mode,
-        provider=provider,
+        provider=summary_provider,
         model=summary_model,
         runs_per_case=effective_runs,
         selected_case_ids=[loaded.reference.id for loaded in selected],

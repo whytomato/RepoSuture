@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 from typing import Annotated
+from urllib.parse import urlsplit
 
 from pydantic import (
     BaseModel,
@@ -35,6 +36,7 @@ class OpenAIModelConfig(BaseModel):
 
     api_key: SecretStr
     model: ModelName
+    base_url: str | None = None
     api_timeout_seconds: Annotated[StrictInt, Field(ge=1, le=600)] = 60
     max_retries: Annotated[StrictInt, Field(ge=0, le=5)] = 2
     max_output_tokens: Annotated[StrictInt, Field(ge=128, le=32_768)] = 4096
@@ -48,13 +50,51 @@ class OpenAIModelConfig(BaseModel):
     @field_validator("api_key", mode="before")
     @classmethod
     def validate_api_key(cls, value: object) -> object:
-        if not isinstance(value, str):
+        if isinstance(value, SecretStr):
+            plaintext = value.get_secret_value()
+        elif isinstance(value, str):
+            plaintext = value
+        else:
             raise ValueError("OPENAI_API_KEY must be a string")
-        if not value.strip():
+        if not plaintext.strip():
             raise ValueError("OPENAI_API_KEY is empty")
-        if len(value) > 4_096 or any(character in value for character in "\r\n\x00"):
+        if len(plaintext) > 4_096 or any(
+            character in plaintext for character in "\r\n\x00"
+        ):
             raise ValueError("OPENAI_API_KEY has an invalid format")
         return value
+
+    @field_validator("base_url", mode="before")
+    @classmethod
+    def validate_base_url(cls, value: object) -> object:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("OPENAI_BASE_URL must be a string")
+        if not value or value != value.strip() or len(value) > 2_048:
+            raise ValueError("OPENAI_BASE_URL has an invalid format")
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("OPENAI_BASE_URL must be an HTTPS API root without credentials")
+        if parsed.hostname.casefold() == "openrouter.ai" and (
+            parsed.path.rstrip("/") != "/api/v1"
+        ):
+            raise ValueError("OpenRouter OPENAI_BASE_URL must end with /api/v1")
+        return value.rstrip("/")
+
+    @property
+    def provider_name(self) -> str:
+        if self.base_url is None:
+            return "openai"
+        hostname = urlsplit(self.base_url).hostname
+        return "openrouter" if hostname and hostname.casefold() == "openrouter.ai" else "openai"
 
 
 def load_openai_model_config(
@@ -67,14 +107,16 @@ def load_openai_model_config(
     max_retained_model_output_bytes: int = 65_536,
     max_retained_tool_output_bytes: int = 65_536,
 ) -> OpenAIModelConfig:
-    """Read only the two documented environment variables and validate them."""
+    """Read only the three documented live-model variables and validate them."""
 
     source = os.environ if environ is None else environ
     api_key = source.get("OPENAI_API_KEY", "")
     model = model_override if model_override is not None else source.get("PATCHPILOT_MODEL", "")
+    base_url = source.get("OPENAI_BASE_URL") or None
     return OpenAIModelConfig(
         api_key=SecretStr(api_key),
         model=model,
+        base_url=base_url,
         api_timeout_seconds=api_timeout_seconds,
         max_retries=max_retries,
         max_output_tokens=max_output_tokens,

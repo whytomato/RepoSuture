@@ -35,7 +35,12 @@ from patchpilot.models import (
     OpenAIResponsesClient,
     load_openai_model_config,
 )
-from patchpilot.patching import PatchApplier, PatchInspection, classify_file
+from patchpilot.patching import (
+    PatchApplier,
+    PatchErrorCode,
+    PatchInspection,
+    classify_file,
+)
 from patchpilot.process import ProcessRunner
 from patchpilot.reporting import (
     ArtifactPaths,
@@ -61,8 +66,19 @@ REPAIR_MODEL_INSTRUCTIONS = """You repair one small Java Maven defect using only
 Inspect relevant code before editing and use the reproduced baseline failure as evidence.
 Make the smallest reasonable production-code change; avoid broad refactoring.
 Never modify tests, pom.xml, Maven Wrapper files, .mvn, CI, or Git metadata.
-Submit a complete Git-style Unified Diff through apply_patch. Test results are the source of truth.
-If deterministic tests fail, use their diagnostic and submit a revised complete Patch.
+Return only the Patch in the apply_patch `patch` argument; do not use Markdown code fences or prose.
+Include complete Git-style headers and unchanged context lines with a leading space. Ensure hunk
+counts match; Git recount can safely recover count mistakes only. A fictional valid example is:
+diff --git a/src/main/java/example/Example.java b/src/main/java/example/Example.java
+--- a/src/main/java/example/Example.java
++++ b/src/main/java/example/Example.java
+@@ -1,3 +1,3 @@
+ public class Example {
+-    private boolean enabled = false;
++    private boolean enabled = true;
+ }
+If a Patch is rejected, use its structured diagnostic and reread the relevant source region when
+necessary. Test results are the source of truth.
 Do not claim success from inspection or fabricate evidence. Do not repeat equivalent patches.
 Stop when no evidence-based next step remains.
 """
@@ -223,7 +239,7 @@ def repair_case(
                         config=config,
                         instructions=REPAIR_MODEL_INSTRUCTIONS,
                     )
-                    provider = "openai"
+                    provider = config.provider_name
                     model_name = config.model
                 except (ValidationError, ModelConfigurationError) as exc:
                     del exc
@@ -316,6 +332,7 @@ def repair_case(
                         target_test_timeout_seconds=case.target_test_timeout_seconds,
                         process_runner=runner,
                         production_java_only=True,
+                        max_patch_attempts=patch_limit,
                     )
                     executor = create_patchpilot_tool_executor(environment)
                     messages = [
@@ -325,7 +342,7 @@ def repair_case(
                         )
                     ]
                     continuation: ProviderContinuation | None = None
-                    last_tool_error: ToolErrorCode | None = None
+                    last_tool_error: ToolErrorCode | PatchErrorCode | None = None
 
                     while True:
                         elapsed = time.monotonic() - started_monotonic
@@ -411,7 +428,11 @@ def repair_case(
                         if response.finish_requested:
                             final_status = (
                                 FinalStatus.POLICY_REJECTED
-                                if last_tool_error is ToolErrorCode.POLICY_REJECTED
+                                if last_tool_error
+                                in {
+                                    ToolErrorCode.POLICY_REJECTED,
+                                    PatchErrorCode.PATCH_POLICY_REJECTED,
+                                }
                                 else FinalStatus.MODEL_STOPPED
                             )
                             suffix = (
@@ -480,11 +501,7 @@ def repair_case(
                                 ),
                             )
                         last_tool_error = result.error.code if result.error else None
-                        validation_rejected = result.error is not None and result.error.code in {
-                            ToolErrorCode.UNKNOWN_TOOL,
-                            ToolErrorCode.INVALID_ARGUMENTS,
-                            ToolErrorCode.POLICY_REJECTED,
-                        }
+                        validation_rejected = result.error is not None
                         trace.emit(
                             "tool_call_rejected" if validation_rejected else "tool_call_validated",
                             status=(result.error.code.value if result.error else "OK"),
@@ -511,8 +528,57 @@ def repair_case(
                                     "patch_size": attempt.patch_size,
                                     "affected_files": list(attempt.affected_files),
                                     "equivalent": attempt.equivalent_to_previous,
+                                    "original_patch_sha256": attempt.original_patch_sha256,
+                                    "normalized_patch_sha256": attempt.normalized_patch_sha256,
+                                    "normalization_occurred": attempt.normalization_occurred,
+                                    "normalization_operations": list(
+                                        attempt.normalization_operations
+                                    ),
+                                    "parsed_paths": list(attempt.parsed_paths),
+                                    "patch_operation_types": [
+                                        operation.value for operation in attempt.operation_types
+                                    ],
+                                    "validation_result": (
+                                        attempt.validation_result.value
+                                        if attempt.validation_result is not None
+                                        else None
+                                    ),
+                                    "recount_used": attempt.recount_used,
+                                    "error_code": (
+                                        attempt.error_code.value
+                                        if attempt.error_code is not None
+                                        else None
+                                    ),
+                                    "git_diagnostic": attempt.git_diagnostic,
+                                    "strict_git_diagnostic": (
+                                        attempt.strict_git_diagnostic
+                                    ),
+                                    "recount_git_diagnostic": (
+                                        attempt.recount_git_diagnostic
+                                    ),
+                                    "policy_diagnostic": attempt.policy_diagnostic,
                                 },
                             )
+
+                            if result.output and result.output.get("terminal") is True:
+                                messages.append(
+                                    AgentMessage(role="tool", tool_result=result)
+                                )
+                                trace.emit(
+                                    "tool_execution_completed",
+                                    status="FAILED",
+                                    metadata={
+                                        "tool_name": call.name,
+                                        "truncated": _result_truncated(result),
+                                    },
+                                )
+                                final_status = FinalStatus.INFRASTRUCTURE_ERROR
+                                failure_reason = (
+                                    result.error.message
+                                    if result.error is not None
+                                    else "terminal Patch transaction failure"
+                                )
+                                break
 
                         if call.name == "run_target_test" and result.success:
                             target_executions += 1
@@ -829,6 +895,25 @@ def repair_case(
             accepted=attempt.accepted,
             equivalent_to_previous=attempt.equivalent_to_previous,
             failure_reason=attempt.failure_reason,
+            original_patch_sha256=attempt.original_patch_sha256,
+            normalized_patch_sha256=attempt.normalized_patch_sha256,
+            normalization_occurred=attempt.normalization_occurred,
+            normalization_operations=list(attempt.normalization_operations),
+            parsed_paths=list(attempt.parsed_paths),
+            operation_types=[operation.value for operation in attempt.operation_types],
+            validation_result=(
+                attempt.validation_result.value
+                if attempt.validation_result is not None
+                else None
+            ),
+            recount_used=attempt.recount_used,
+            error_code=(
+                attempt.error_code.value if attempt.error_code is not None else None
+            ),
+            git_diagnostic=attempt.git_diagnostic,
+            strict_git_diagnostic=attempt.strict_git_diagnostic,
+            recount_git_diagnostic=attempt.recount_git_diagnostic,
+            policy_diagnostic=attempt.policy_diagnostic,
         )
         for attempt in (environment.patch_attempts if environment else [])
     ]

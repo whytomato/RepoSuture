@@ -189,6 +189,74 @@ MVP 的六类缺陷为 null 输入验证、分页边界、enum/status 过滤、�
 基础设施失败返回 3；尝试均执行但零解决返回 4。`validate-benchmark` 仅在全部 Case 有效时返回
 0。精确定义和失败 taxonomy 见 benchmark 文档。
 
+## Milestone 4A: model Patch ingestion
+
+Milestone 4A hardens the existing `apply_patch` boundary; it does not add Agent
+capabilities. Model text still cannot produce `RESOLVED`: Git, Maven, JUnit, the target
+test, the full regression suite, repository integrity, and artifact checks remain the
+only authorities.
+
+The initial single-Case OpenRouter smoke was an engineering finding, not a model
+resolution-rate result. With endpoint `https://openrouter.ai/api/v1`, model
+`z-ai/glm-5.2`, and the existing two-Patch-attempt budget, the real baseline failed as
+expected and three API requests completed without API errors. The model made one
+`read_file` call and two `apply_patch` calls. The first Patch lacked `diff --git`; the
+second was rejected by Git as `corrupt patch at line 12`. Both were safely rejected,
+neither target nor regression tests ran afterward, no worktree change survived, and no
+false `RESOLVED` was produced. The run ended `AGENT_BUDGET_EXHAUSTED`. This result must
+not be aggregated as a model capability rate.
+
+Model Patch ingestion now records raw and normalized SHA-256 values and every applied
+normalization. The only permitted transformations are newline normalization, UTF-8 BOM
+removal, removal of one whole-argument Markdown Patch fence, removal of blank lines
+outside the Patch, exactly one final newline, and one narrow synthesized `diff --git`
+header. Header synthesis requires exactly one existing production Java file and matching
+`--- a/<path>` / `+++ b/<path>` headers. Paths are never inferred from issue text, prior
+tool calls, hunks, or hidden benchmark data.
+
+PatchPilot does not repair source text, context lines, hunk prefixes, paths, create/delete
+operations, rename/copy metadata, binary data, mode changes, test/build/CI changes, or
+ambiguous multi-file headers. It always tries strict `git apply --check` first. Only after
+structural and policy checks pass may it try one `git apply --check --recount`; a successful
+recount means hunk line counts were inaccurate, not that arbitrary malformed content was
+repaired. Application uses the exact normalized bytes checked by Git and rolls back on
+any post-apply failure.
+
+Patch rejection feedback contains a bounded stable code, Git/policy diagnostic,
+required format, safety rules, normalization evidence, `worktree_modified=false`, and
+the exact remaining Patch-attempt budget. Codes include `PATCH_EMPTY`,
+`PATCH_ENCODING_INVALID`, `PATCH_FENCE_INVALID`, `PATCH_GIT_HEADER_MISSING`,
+`PATCH_FILE_HEADERS_MISSING`, `PATCH_PATH_MISMATCH`, `PATCH_PATH_UNSAFE`,
+`PATCH_OPERATION_UNSUPPORTED`, `PATCH_POLICY_REJECTED`, `PATCH_HUNK_INVALID`,
+`PATCH_GIT_CHECK_FAILED`, `PATCH_GIT_RECOUNT_FAILED`, `PATCH_APPLICATION_FAILED`,
+`PATCH_POST_APPLY_FAILED`, and `PATCH_ROLLBACK_FAILED`.
+
+OpenRouter uses the existing OpenAI-compatible Responses adapter; it is not a new
+PatchPilot provider implementation. Configure only the documented variables:
+
+```powershell
+$env:OPENAI_API_KEY = "<your-openrouter-api-key>"
+$env:OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
+$env:PATCHPILOT_MODEL = "z-ai/glm-5.2"
+```
+
+The CLI provider selector remains `--provider openai`, while live reports identify the
+actual endpoint provider as `openrouter`. The clean before/after smoke uses the same Case,
+model, and two-attempt budget:
+
+```powershell
+patchpilot benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-openrouter-smoke-m4a `
+  --provider openai `
+  --case null-input-validation `
+  --runs-per-case 1 `
+  --max-patch-attempts 2
+```
+
+Run this only with genuine credentials. It consumes API quota and may cost money. Never
+commit `.env` or generated artifacts, and do not claim the interface improvement fixed
+the live outcome until a new clean run proves it.
+
 ## Case 格式
 
 Milestone 1 schema v1 含仅供基础设施验证的 golden Patch：

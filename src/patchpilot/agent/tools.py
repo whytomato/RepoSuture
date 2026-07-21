@@ -34,10 +34,13 @@ from patchpilot.patching import (
     MAX_PATCH_BYTES,
     FileClassification,
     PatchApplier,
+    PatchErrorCode,
+    PatchIngestionError,
+    PatchIngestionRecord,
     PatchInspection,
+    PatchOperationType,
+    PatchValidationResult,
     classify_file,
-    create_patch_document,
-    inspect_patch_document,
 )
 from patchpilot.process import ProcessRunner
 from patchpilot.reporting import TestOutcome
@@ -56,6 +59,36 @@ MAX_TEST_OUTPUT_CHARS = 12_000
 MAX_TOOL_ERROR_CHARS = 3_500
 MAX_LIST_DEPTH = 12
 MAX_GIT_DIFF_BYTES = 128 * 1024
+
+PATCH_REQUIRED_FORMAT = (
+    "diff --git a/<path> b/<path>",
+    "--- a/<path>",
+    "+++ b/<path>",
+    "@@ -old_start,old_count +new_start,new_count @@",
+)
+PATCH_FEEDBACK_RULES = (
+    "Every hunk content line must begin with space, +, -, or backslash.",
+    "Return only the Patch in the patch tool argument; do not add explanatory prose.",
+    "Do not use Markdown code fences.",
+    "Include complete Git-style headers and unchanged context lines with a leading space.",
+    "Ensure hunk counts match; Git recount can recover count mistakes only.",
+    "Do not modify tests, build files, Maven Wrapper files, or CI.",
+    "Reread the relevant source region after a rejected Patch when necessary.",
+)
+PATCH_TOOL_DESCRIPTION = """Validate and transactionally apply one UTF-8 Git-style Unified Diff.
+Return only the Patch in the `patch` tool argument; do not use Markdown code fences. Include
+complete Git-style headers, unchanged context lines with a leading space, and matching hunk
+counts. Git recount may recover count mistakes only. Reread the relevant source after rejection.
+Never modify tests, build files, Maven Wrapper files, or CI. Example:
+diff --git a/src/main/java/example/Example.java b/src/main/java/example/Example.java
+--- a/src/main/java/example/Example.java
++++ b/src/main/java/example/Example.java
+@@ -1,3 +1,3 @@
+ public class Example {
+-    private boolean enabled = false;
++    private boolean enabled = true;
+ }
+"""
 
 IGNORED_DIRECTORY_NAMES = frozenset(
     {
@@ -138,7 +171,7 @@ class ReadFileInput(_ToolInput):
 class ApplyPatchInput(_ToolInput):
     patch: Annotated[
         str,
-        StringConstraints(strict=True, min_length=1, max_length=MAX_PATCH_BYTES),
+        StringConstraints(strict=True, max_length=MAX_PATCH_BYTES),
     ]
 
 
@@ -152,6 +185,21 @@ class GitDiffInput(_ToolInput):
 
 class ToolPolicyError(ValueError):
     """Raised when a locally valid tool request violates repair policy."""
+
+
+class StructuredToolFailure(RuntimeError):
+    """A bounded handler rejection with model-visible structured details."""
+
+    def __init__(
+        self,
+        code: ToolErrorCode | PatchErrorCode,
+        message: str,
+        output: dict[str, Any],
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.output = output
 
 
 @dataclass(frozen=True, slots=True)
@@ -228,6 +276,13 @@ class ToolExecutor:
 
         try:
             execution = definition.execute(arguments)
+        except StructuredToolFailure as exc:
+            return self._failure(
+                call,
+                exc.code,
+                exc.message,
+                output=exc.output,
+            )
         except ToolPolicyError as exc:
             return self._failure(
                 call,
@@ -252,14 +307,17 @@ class ToolExecutor:
     @staticmethod
     def _failure(
         call: ToolCall,
-        code: ToolErrorCode,
+        code: ToolErrorCode | PatchErrorCode,
         message: str,
+        *,
+        output: dict[str, Any] | None = None,
     ) -> ToolResult:
         bounded = message[:MAX_TOOL_ERROR_CHARS]
         return ToolResult(
             call_id=call.call_id,
             tool_name=call.name,
             success=False,
+            output=output,
             error=ToolError(code=code, message=bounded),
         )
 
@@ -273,6 +331,7 @@ class PatchPilotToolEnvironment:
     target_test_timeout_seconds: float
     process_runner: ProcessRunner
     production_java_only: bool = False
+    max_patch_attempts: int = 2
     patch_inspection: PatchInspection | None = field(default=None, init=False)
     final_patch: str | None = field(default=None, init=False)
     latest_target_execution: MavenExecution | None = field(default=None, init=False)
@@ -302,6 +361,8 @@ class PatchPilotToolEnvironment:
             raise ValueError("Agent tools require an isolated linked Git worktree")
         if not 1 <= self.target_test_timeout_seconds <= 3_600:
             raise ValueError("target test timeout must be between 1 and 3600 seconds")
+        if not 1 <= self.max_patch_attempts <= 10:
+            raise ValueError("max_patch_attempts must be between 1 and 10")
         self.worktree = resolved
         self._patch_applier = PatchApplier(self.process_runner)
         self._maven_runner = MavenRunner(self.process_runner)
@@ -333,6 +394,9 @@ class PatchPilotToolEnvironment:
             failure_reason=(failure_reason or "invalid apply_patch call")[
                 :MAX_TOOL_ERROR_CHARS
             ],
+            original_patch_sha256=digest,
+            normalized_patch_sha256=None,
+            error_code=None,
         )
         self.patch_attempts.append(record)
         return record
@@ -349,6 +413,19 @@ class PatchAttemptRecord:
     accepted: bool
     equivalent_to_previous: bool
     failure_reason: str | None = None
+    original_patch_sha256: str | None = None
+    normalized_patch_sha256: str | None = None
+    normalization_occurred: bool = False
+    normalization_operations: tuple[str, ...] = ()
+    parsed_paths: tuple[str, ...] = ()
+    operation_types: tuple[PatchOperationType, ...] = ()
+    validation_result: PatchValidationResult | None = None
+    recount_used: bool = False
+    error_code: PatchErrorCode | None = None
+    git_diagnostic: str | None = None
+    strict_git_diagnostic: str | None = None
+    recount_git_diagnostic: str | None = None
+    policy_diagnostic: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -386,9 +463,7 @@ class _PatchPilotToolHandlers:
             ),
             ToolDefinition(
                 name="apply_patch",
-                description=(
-                    "Validate and apply one UTF-8 Unified Diff through the Git patch runtime."
-                ),
+                description=PATCH_TOOL_DESCRIPTION,
                 input_model=ApplyPatchInput,
                 execute=self.apply_patch,
             ),
@@ -546,35 +621,35 @@ class _PatchPilotToolHandlers:
                 accepted=False,
                 equivalent=True,
                 failure_reason="equivalent patch content was already attempted",
+                ingestion=None,
+                error_code=PatchErrorCode.PATCH_POLICY_REJECTED,
             )
-            raise ToolPolicyError("equivalent patch content was already attempted")
+            raise StructuredToolFailure(
+                ToolErrorCode.POLICY_REJECTED,
+                "Equivalent patch content was already attempted.",
+                self._patch_rejection_output(
+                    code=PatchErrorCode.PATCH_POLICY_REJECTED,
+                    message="Equivalent patch content was already attempted.",
+                    ingestion=None,
+                ),
+            )
 
-        affected_files: tuple[str, ...] = ()
         try:
-            document = create_patch_document(
-                patch_bytes,
-                source_path=Path("agent-input.patch"),
-            )
-            inspection = inspect_patch_document(document, self.environment.worktree)
-            affected_files = inspection.affected_files
-            if self.environment.production_java_only:
-                disallowed = [
-                    path for path in affected_files if not _is_production_java(path)
-                ]
-                if disallowed:
-                    raise ToolPolicyError(
-                        "Agent patches may modify only src/main/java production files: "
-                        + ", ".join(disallowed)
-                    )
-            inspection = self.environment._patch_applier.apply_document(
-                document,
+            application = self.environment._patch_applier.apply_model_patch(
+                arguments.patch,
                 self.environment.worktree,
+                production_java_only=self.environment.production_java_only,
             )
-            final_patch = self.environment._patch_applier.final_diff(
-                self.environment.worktree,
-                inspection,
-            )
-        except Exception as exc:
+        except PatchIngestionError as exc:
+            self.environment.patch_inspection = None
+            self.environment.final_patch = None
+            ingestion = exc.record
+            affected_files = ingestion.parsed_paths if ingestion is not None else ()
+            failure_detail = " ".join(
+                value
+                for value in (exc.message, exc.policy_diagnostic, exc.git_diagnostic)
+                if value
+            )[:MAX_TOOL_ERROR_CHARS]
             self._record_patch_attempt(
                 attempt_id=attempt_id,
                 patch_sha256=patch_sha256,
@@ -582,12 +657,25 @@ class _PatchPilotToolHandlers:
                 affected_files=affected_files,
                 accepted=False,
                 equivalent=False,
-                failure_reason=(str(exc).strip() or type(exc).__name__)[:MAX_TOOL_ERROR_CHARS],
+                failure_reason=failure_detail,
+                ingestion=ingestion,
+                error_code=exc.code,
             )
-            if isinstance(exc, PathSecurityError):
-                raise ToolPolicyError(str(exc)) from exc
-            raise
+            raise StructuredToolFailure(
+                _tool_error_code_for_patch(exc.code),
+                exc.message,
+                self._patch_rejection_output(
+                    code=exc.code,
+                    message=exc.message,
+                    ingestion=ingestion,
+                    git_diagnostic=exc.git_diagnostic,
+                    policy_diagnostic=exc.policy_diagnostic,
+                    terminal=exc.terminal,
+                ),
+            ) from exc
 
+        inspection = application.inspection
+        final_patch = application.final_patch
         self._record_patch_attempt(
             attempt_id=attempt_id,
             patch_sha256=patch_sha256,
@@ -596,6 +684,8 @@ class _PatchPilotToolHandlers:
             accepted=True,
             equivalent=False,
             failure_reason=None,
+            ingestion=application.record,
+            error_code=None,
         )
         self.environment.patch_inspection = inspection
         self.environment.final_patch = final_patch
@@ -608,6 +698,21 @@ class _PatchPilotToolHandlers:
                 },
                 "patch_size": inspection.patch_size,
                 "patch_sha256": inspection.patch_sha256,
+                "original_patch_sha256": application.record.original_sha256,
+                "normalized_patch_sha256": application.record.normalized_sha256,
+                "normalization_occurred": application.record.normalization_occurred,
+                "normalization_operations": [
+                    operation.value
+                    for operation in application.record.normalization_operations
+                ],
+                "parsed_paths": list(application.record.parsed_paths),
+                "patch_operation_types": [
+                    operation.value for operation in application.record.operation_types
+                ],
+                "validation_result": application.record.validation_result.value,
+                "recount_used": application.record.recount_used,
+                "strict_git_diagnostic": application.record.strict_git_diagnostic,
+                "recount_git_diagnostic": application.record.recount_git_diagnostic,
                 "final_patch_size": len(final_patch.encode("utf-8")),
                 "final_patch_sha256": hashlib.sha256(final_patch.encode("utf-8")).hexdigest(),
                 "modifies_tests": inspection.modifies_tests,
@@ -627,6 +732,8 @@ class _PatchPilotToolHandlers:
         accepted: bool,
         equivalent: bool,
         failure_reason: str | None,
+        ingestion: PatchIngestionRecord | None,
+        error_code: PatchErrorCode | None,
     ) -> None:
         self.environment.patch_attempts.append(
             PatchAttemptRecord(
@@ -637,8 +744,103 @@ class _PatchPilotToolHandlers:
                 accepted=accepted,
                 equivalent_to_previous=equivalent,
                 failure_reason=failure_reason,
+                original_patch_sha256=(
+                    ingestion.original_sha256 if ingestion is not None else patch_sha256
+                ),
+                normalized_patch_sha256=(
+                    ingestion.normalized_sha256 if ingestion is not None else None
+                ),
+                normalization_occurred=(
+                    ingestion.normalization_occurred if ingestion is not None else False
+                ),
+                normalization_operations=(
+                    tuple(
+                        operation.value
+                        for operation in ingestion.normalization_operations
+                    )
+                    if ingestion is not None
+                    else ()
+                ),
+                parsed_paths=(ingestion.parsed_paths if ingestion is not None else ()),
+                operation_types=(
+                    ingestion.operation_types if ingestion is not None else ()
+                ),
+                validation_result=(
+                    ingestion.validation_result if ingestion is not None else None
+                ),
+                recount_used=(ingestion.recount_used if ingestion is not None else False),
+                error_code=error_code,
+                git_diagnostic=(
+                    ingestion.git_diagnostic if ingestion is not None else None
+                ),
+                strict_git_diagnostic=(
+                    ingestion.strict_git_diagnostic if ingestion is not None else None
+                ),
+                recount_git_diagnostic=(
+                    ingestion.recount_git_diagnostic if ingestion is not None else None
+                ),
+                policy_diagnostic=(
+                    ingestion.policy_diagnostic if ingestion is not None else None
+                ),
             )
         )
+
+    def _patch_rejection_output(
+        self,
+        *,
+        code: PatchErrorCode,
+        message: str,
+        ingestion: PatchIngestionRecord | None,
+        git_diagnostic: str | None = None,
+        policy_diagnostic: str | None = None,
+        terminal: bool = False,
+    ) -> dict[str, Any]:
+        remaining = max(
+            0,
+            self.environment.max_patch_attempts - len(self.environment.patch_attempts),
+        )
+        return {
+            "status": "rejected",
+            "error_code": code.value,
+            "message": message[:MAX_TOOL_ERROR_CHARS],
+            "git_diagnostic": git_diagnostic,
+            "strict_git_diagnostic": (
+                ingestion.strict_git_diagnostic if ingestion is not None else None
+            ),
+            "recount_git_diagnostic": (
+                ingestion.recount_git_diagnostic if ingestion is not None else None
+            ),
+            "policy_diagnostic": policy_diagnostic,
+            "required_format": list(PATCH_REQUIRED_FORMAT),
+            "rules": list(PATCH_FEEDBACK_RULES),
+            "worktree_modified": False,
+            "patch_attempts_remaining": remaining,
+            "terminal": terminal,
+            "original_patch_sha256": (
+                ingestion.original_sha256 if ingestion is not None else None
+            ),
+            "normalized_patch_sha256": (
+                ingestion.normalized_sha256 if ingestion is not None else None
+            ),
+            "normalization_occurred": (
+                ingestion.normalization_occurred if ingestion is not None else False
+            ),
+            "normalization_operations": (
+                [operation.value for operation in ingestion.normalization_operations]
+                if ingestion is not None
+                else []
+            ),
+            "parsed_paths": list(ingestion.parsed_paths) if ingestion is not None else [],
+            "patch_operation_types": (
+                [operation.value for operation in ingestion.operation_types]
+                if ingestion is not None
+                else []
+            ),
+            "validation_result": (
+                ingestion.validation_result.value if ingestion is not None else "REJECTED"
+            ),
+            "recount_used": ingestion.recount_used if ingestion is not None else False,
+        }
 
     def run_target_test(self, arguments: BaseModel) -> ToolExecution:
         if not isinstance(arguments, RunTargetTestInput):
@@ -889,6 +1091,18 @@ def _is_production_java(path: str) -> bool:
         and normalized.casefold().startswith("src/main/java/")
         and normalized.casefold().endswith(".java")
     )
+
+
+def _tool_error_code_for_patch(
+    code: PatchErrorCode,
+) -> ToolErrorCode | PatchErrorCode:
+    if code in {
+        PatchErrorCode.PATCH_PATH_UNSAFE,
+        PatchErrorCode.PATCH_OPERATION_UNSUPPORTED,
+        PatchErrorCode.PATCH_POLICY_REJECTED,
+    }:
+        return ToolErrorCode.POLICY_REJECTED
+    return code
 
 
 def create_patchpilot_tool_executor(

@@ -2,6 +2,81 @@
 
 Last updated: 2026-07-21
 
+## 2026-07-21 Milestone 4A — robust model Patch ingestion
+
+### Living progress
+
+- [x] Re-read the repository rules and Milestone 3 design, inspect the existing
+  OpenRouter smoke report/trace, and confirm the two safe Patch rejections and absence
+  of target/regression execution or false resolution.
+- [x] Audit and retain the plaintext-to-`SecretStr` loader compatibility fix; make the
+  configured endpoint explicit and distinguish OpenAI from OpenRouter without adding a
+  second provider implementation.
+- [x] Add a staged, auditable model Patch pipeline with raw/normalized hashes, bounded
+  normalization, structural parsing, operation/path policy, strict Git check, limited
+  recount fallback, transactional apply, and canonical final diff.
+- [x] Add stable Patch error codes and actionable bounded rejection feedback containing
+  exact remaining Patch attempts and a fictional complete format example.
+- [x] Verify stateless continuation carries the prior function call and structured
+  rejection into the next OpenRouter request without `previous_response_id`.
+- [x] Add rollback verification and injected post-apply/rollback-failure coverage; a
+  rollback failure becomes terminal infrastructure state.
+- [x] Add real Git/Maven/JUnit FakeLLM coverage for read → malformed headerless Patch →
+  structured rejection → corrected Patch → target PASS → regression PASS → `RESOLVED`.
+- [x] Document the initial smoke finding, normalization/recount boundary, taxonomy, and
+  controlled before/after live-smoke method.
+- [x] Run the complete pytest, ruff, mypy, deterministic Case, benchmark validation,
+  scripted benchmark, artifact/secret/worktree inspections, and record observed results.
+- [ ] Review and commit only intended files on `codex/milestone3`, confirm a clean tree,
+  then run the same single-Case OpenRouter smoke if genuine configuration is available.
+- [ ] Fast-forward clean `main`, revalidate the actual primary checkout, push only
+  `main` to `origin/main`, and verify the remote SHA.
+
+### Safety and design decisions
+
+- The model path supports modification of existing production Java files only. The
+  deterministic golden-Patch path remains backward compatible and retains its existing
+  validation behavior.
+- Normalization is text-only and fully recorded: LF newlines, one leading UTF-8 BOM,
+  whole-argument Patch fences, outer blank lines, and one final newline. Header synthesis
+  is allowed only from one matching existing-file `---`/`+++` pair; no external hint can
+  supply a path.
+- Strict `git apply --check` remains first. `--recount` is attempted once only after
+  structural and policy validation and can correct inaccurate counts only. The checked
+  bytes and applied bytes are identical.
+- Fine-grained `PATCH_*` evidence augments rather than replaces Milestone 2's top-level
+  `POLICY_REJECTED` and Milestone 3's aggregate failure categories.
+- OpenRouter uses the OpenAI-compatible Responses adapter with an explicit HTTPS base
+  URL. The only key source remains `OPENAI_API_KEY`; `OPENROUTER_API_KEY` and other aliases
+  are intentionally ignored.
+- The initial OpenRouter result is not a capability statistic. Both malformed Patches
+  were rejected before tests, and the interface change is not claimed successful until a
+  new committed, `dirty=false` live run provides evidence.
+
+### Observed implementation evidence so far
+
+- Focused Patch-ingestion coverage exercises complete and fenced Patches, unambiguous
+  header synthesis, ambiguous/missing/mismatched headers, traversal, test/build/CI
+  policy, create/delete/rename/copy/binary/mode rejection, strict/recount behavior,
+  invalid hunk prefixes/context, empty/encoding errors, bounded secret-redacted
+  diagnostics, partial-apply rollback, post-apply rollback, and later recovery.
+- A combined regression group covering patching, Agent tools, repair orchestration,
+  OpenRouter continuation, run reporting, and benchmark reporting completed with
+  **122 passed**. The dedicated ingestion module reached **24 passed** after the partial
+  apply transaction test.
+- The final pre-commit `python -m pytest -q` completed with **216 passed in 312.01s** and
+  no skipped-test entry. `python -m ruff check .` reported **All checks passed** and
+  `python -m mypy src` reported **Success: no issues found in 22 source files**.
+- `verify-case` and the user-facing FakeLLM repair command both executed real Maven/JUnit
+  and finished `RESOLVED` with baseline FAIL, patched target PASS, and regression PASS.
+- Fresh `.artifacts-m4a-validation` evidence validated **6/6** Cases. Fresh
+  `.artifacts-m4a-scripted` evidence resolved **6/6 scripted/offline** harness attempts;
+  the trap recorded target PASS/regression FAIL before its second Patch passed both.
+- Artifact inspection covered 90 files: the configured key, Authorization/Bearer text,
+  Agent-visible hidden validation paths, and hidden reasoning each had zero matches.
+  The fixture remained clean, temporary execution worktree children were zero, and all
+  generated `.artifacts-m4a-*` roots were ignored by Git.
+
 ## 2026-07-21 Milestone 3 — reproducible Java benchmark and evaluation harness
 
 ### Living progress

@@ -154,6 +154,69 @@ The aggregate artifacts are:
 Artifact roots are never overwritten when aggregate files already exist. Choose a new
 directory for a new run so prior evidence remains reproducible.
 
+## OpenRouter smoke and model Patch ingestion
+
+The live adapter reads only `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and
+`PATCHPILOT_MODEL`. An OpenRouter run uses `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
+and the existing CLI selector `--provider openai`; reports distinguish the actual
+provider as `openrouter`. Scripted and deterministic commands inject their own model or
+use no model and never initialize this live client.
+
+The first OpenRouter smoke used one `null-input-validation` attempt, model
+`z-ai/glm-5.2`, and the Case's two-Patch-attempt budget. It observed a real baseline
+FAIL, three successful API requests, zero API errors, one `read_file`, and two rejected
+`apply_patch` calls. The first Patch omitted `diff --git`; Git reported the second as
+`corrupt patch at line 12`. No target or regression execution followed either rejection,
+the worktree remained unchanged, and the run ended `AGENT_BUDGET_EXHAUSTED` without a
+false `RESOLVED`. This is an interface engineering finding, not a model-resolution-rate
+result.
+
+The before/after comparison holds constant the suite fingerprint, Case, base commit,
+model, one run, sequential execution, and two-Patch-attempt budget. It changes only the
+Patch-ingestion interface, runs from a committed clean tree, and writes a fresh artifact
+root. A post-change outcome is reported only after the command actually runs:
+
+```powershell
+patchpilot benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-openrouter-smoke-m4a `
+  --provider openai `
+  --case null-input-validation `
+  --runs-per-case 1 `
+  --max-patch-attempts 2
+```
+
+For model input, PatchPilot first computes the raw SHA-256, then applies only newline
+normalization, UTF-8 BOM removal, whole-argument Patch-fence removal, outer blank-line
+removal, and exactly one final newline. It may synthesize one `diff --git` header only
+when exactly one matching `--- a/<path>` / `+++ b/<path>` pair names the same existing
+repository-contained `src/main/java/**/*.java` file. The record retains the normalized
+SHA-256 and every operation. No path is inferred from the issue, prior reads, prose,
+hunks, expected files, or hidden validation data.
+
+Structural, path, operation, and production-file policies run before Git. Strict
+`git apply --check` always runs first. If it alone fails after those policies pass, one
+`git apply --check --recount` may recover inaccurate hunk counts. The exact same
+normalized bytes are then applied with `--recount`; no context fuzzing, three-way merge,
+reject file, unsafe path, or whitespace rewrite is used. If recount fails, the Patch is
+rejected. Source code, prefixes, context, filenames, creates/deletes, renames/copies,
+binary/mode changes, and multi-file headers are never repaired.
+
+Every rejection has one stable detailed code: `PATCH_EMPTY`, `PATCH_ENCODING_INVALID`,
+`PATCH_FENCE_INVALID`, `PATCH_GIT_HEADER_MISSING`, `PATCH_FILE_HEADERS_MISSING`,
+`PATCH_PATH_MISMATCH`, `PATCH_PATH_UNSAFE`, `PATCH_OPERATION_UNSUPPORTED`,
+`PATCH_POLICY_REJECTED`, `PATCH_HUNK_INVALID`, `PATCH_GIT_CHECK_FAILED`,
+`PATCH_GIT_RECOUNT_FAILED`, `PATCH_APPLICATION_FAILED`, `PATCH_POST_APPLY_FAILED`, or
+`PATCH_ROLLBACK_FAILED`. Bounded model feedback includes the safe Git/policy diagnostic,
+required format, rules, normalization evidence, unchanged-worktree flag, and remaining
+Patch budget. Top-level benchmark failure categories remain the Milestone 3 taxonomy.
+
+Responses continuation is stateless: the next request contains prior output items, the
+matching function call and `function_call_output`, the structured rejection, and the
+remaining Patch budget. It never uses `previous_response_id` for OpenRouter and never
+writes hidden reasoning to reports. Patch application is transactional; any post-apply
+failure rolls back and verifies a clean worktree. Rollback failure is terminal
+infrastructure failure and cannot continue or resolve.
+
 ## Correctness oracle and metrics
 
 `RESOLVED` requires observed baseline target failure, an accepted nonempty production

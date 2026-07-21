@@ -76,6 +76,7 @@ class OpenAIResponsesClient:
                 _SDKClient,
                 openai.OpenAI(
                     api_key=config.api_key.get_secret_value(),
+                    base_url=config.base_url or "https://api.openai.com/v1",
                     timeout=config.api_timeout_seconds,
                     max_retries=0,
                 ),
@@ -143,7 +144,7 @@ class OpenAIResponsesClient:
         )
         common: dict[str, Any] = {
             "message": visible_text,
-            "provider": "openai",
+            "provider": self.config.provider_name,
             "model": model,
             "response_id": response_id,
             "request_id": request_id,
