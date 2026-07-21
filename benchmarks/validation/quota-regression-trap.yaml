@@ -1,0 +1,15 @@
+schema_version: 1
+id: quota-regression-trap
+repository: ../fixtures/null-email-repo
+base_commit: d54d13bf5ef68037bcb392e934b8915195505888
+issue_title: Grant the configured premium upload quota
+issue_description: >-
+  Non-trial premium plans should receive an upload quota of 100. Standard-plan and trial
+  quota behavior must remain unchanged.
+target_test:
+  class_name: dev.patchpilot.fixture.UploadQuotaServiceTest
+  method_name: grantsPremiumUploadQuota
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/quota-regression-trap.patch
+expected_baseline_failure: test_failure

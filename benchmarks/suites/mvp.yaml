@@ -1,0 +1,55 @@
+schema_version: 1
+suite_id: mvp
+description: >-
+  Six small deterministic Java 17 Maven defects used to evaluate PatchPilot repair runs.
+default_runs_per_case: 1
+default_agent_budgets:
+  max_model_turns: 12
+  max_tool_calls: 30
+  max_patch_attempts: 4
+  max_target_test_executions: 8
+  max_regression_executions: 4
+  max_wall_clock_seconds: 1800
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+tags:
+  - java-17
+  - maven
+  - deterministic
+  - mvp
+notes: >-
+  Scope labels document benchmark construction only and are never sent to a model.
+cases:
+  - id: null-input-validation
+    agent_case: ../cases/null-input-validation.yaml
+    validation_case: ../validation/null-input-validation.yaml
+    scripted_case: ../scripted/null-input-validation.yaml
+    tags: [null-input, one-production-file]
+  - id: pagination-boundary
+    agent_case: ../cases/pagination-boundary.yaml
+    validation_case: ../validation/pagination-boundary.yaml
+    scripted_case: ../scripted/pagination-boundary.yaml
+    tags: [off-by-one, one-production-file]
+  - id: status-filtering
+    agent_case: ../cases/status-filtering.yaml
+    validation_case: ../validation/status-filtering.yaml
+    scripted_case: ../scripted/status-filtering.yaml
+    tags: [enum-filter, two-production-files]
+  - id: shipping-eligibility
+    agent_case: ../cases/shipping-eligibility.yaml
+    validation_case: ../validation/shipping-eligibility.yaml
+    scripted_case: ../scripted/shipping-eligibility.yaml
+    tags: [boolean-logic, one-production-file]
+  - id: country-code-normalization
+    agent_case: ../cases/country-code-normalization.yaml
+    validation_case: ../validation/country-code-normalization.yaml
+    scripted_case: ../scripted/country-code-normalization.yaml
+    tags: [normalization, two-production-files]
+  - id: quota-regression-trap
+    agent_case: ../cases/quota-regression-trap.yaml
+    validation_case: ../validation/quota-regression-trap.yaml
+    scripted_case: ../scripted/quota-regression-trap.yaml
+    tags: [regression-trap, one-production-file]

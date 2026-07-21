@@ -25,10 +25,19 @@ class FakeLLM:
             raise ValueError("FakeLLM requires at least one scripted response")
         self._responses = tuple(responses)
         self._cursor = 0
+        self._request_count = 0
 
     @property
     def chat_count(self) -> int:
         return self._cursor
+
+    @property
+    def model_request_count(self) -> int:
+        return self._request_count
+
+    @property
+    def api_error_count(self) -> int:
+        return 0
 
     def chat(
         self,
@@ -38,6 +47,7 @@ class FakeLLM:
         continuation: ProviderContinuation | None = None,
     ) -> AgentResponse:
         del messages, tools, continuation
+        self._request_count += 1
         if self._cursor >= len(self._responses):
             raise FakeLLMExhaustedError("FakeLLM response script was exhausted")
         response = self._responses[self._cursor]

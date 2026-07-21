@@ -78,3 +78,18 @@ def test_repair_missing_model_configuration_fails_before_worktree_with_report(
     serialized = reports[0].read_text(encoding="utf-8")
     assert "OPENAI_API_KEY" in serialized
     assert "sk-" not in serialized
+
+
+def test_validate_benchmark_missing_suite_exits_nonzero(tmp_path: Path) -> None:
+    result = CliRunner().invoke(
+        app,
+        [
+            "validate-benchmark",
+            str(tmp_path / "missing-suite.yaml"),
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid benchmark suite" in result.stderr

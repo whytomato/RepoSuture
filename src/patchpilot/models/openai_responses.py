@@ -69,6 +69,8 @@ class OpenAIResponsesClient:
         self.config = config
         self.instructions = instructions
         self._sleep = sleep
+        self._model_request_count = 0
+        self._api_error_count = 0
         if sdk_client is None:
             sdk_client = cast(
                 _SDKClient,
@@ -79,6 +81,14 @@ class OpenAIResponsesClient:
                 ),
             )
         self._client = sdk_client
+
+    @property
+    def model_request_count(self) -> int:
+        return self._model_request_count
+
+    @property
+    def api_error_count(self) -> int:
+        return self._api_error_count
 
     def chat(
         self,
@@ -151,8 +161,10 @@ class OpenAIResponsesClient:
         maximum_attempts = self.config.max_retries + 1
         for attempt in range(1, maximum_attempts + 1):
             try:
+                self._model_request_count += 1
                 return self._client.responses.create(**request)
             except Exception as exc:
+                self._api_error_count += 1
                 retryable, configuration = _classify_provider_error(exc)
                 message = self._safe_error_message(exc)
                 if configuration:

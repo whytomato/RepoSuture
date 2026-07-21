@@ -1,0 +1,9 @@
+schema_version: 1
+case_id: quota-regression-trap
+search_query: quotaFor
+read_files:
+  - src/main/java/dev/patchpilot/fixture/UploadQuotaService.java
+  - src/main/java/dev/patchpilot/fixture/Plan.java
+patch_files:
+  - patches/quota-regression-trap-naive.patch
+  - patches/quota-regression-trap.patch

@@ -1,0 +1,15 @@
+schema_version: 1
+id: shipping-eligibility
+repository: ../fixtures/null-email-repo
+base_commit: 3a876deb99c25b6b4af85214c06d73550bef353a
+issue_title: Require both shipment approvals
+issue_description: >-
+  Shipping is allowed only when the address is verified and payment is authorized. A
+  single approval must not make an order eligible to ship.
+target_test:
+  class_name: dev.patchpilot.fixture.ShippingEligibilityTest
+  method_name: requiresAddressAndPaymentApproval
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/shipping-eligibility.patch
+expected_baseline_failure: test_failure

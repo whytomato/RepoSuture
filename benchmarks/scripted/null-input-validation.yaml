@@ -1,0 +1,7 @@
+schema_version: 1
+case_id: null-input-validation
+search_query: email
+read_files:
+  - src/main/java/dev/patchpilot/fixture/UserRegistrationService.java
+patch_files:
+  - patches/null-input-validation.patch

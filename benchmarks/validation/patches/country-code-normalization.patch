@@ -1,0 +1,11 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/ShippingZoneDirectory.java b/src/main/java/dev/patchpilot/fixture/ShippingZoneDirectory.java
+--- a/src/main/java/dev/patchpilot/fixture/ShippingZoneDirectory.java
++++ b/src/main/java/dev/patchpilot/fixture/ShippingZoneDirectory.java
+@@ -8,6 +8,6 @@ public final class ShippingZoneDirectory {
+     }
+ 
+     public boolean isDomestic(String countryCode) {
+-        return "US".equals(countryCode);
++        return "US".equals(normalizer.normalize(countryCode));
+     }
+ }

@@ -1,0 +1,29 @@
+schema_version: 2
+workflow: agent_repair
+id: null-input-validation
+repository: ../fixtures/null-email-repo
+base_commit: edd183a37038d966afca53e94e8d8819fc508bb8
+issue_title: Reject a missing email during registration
+issue_description: >-
+  Registration must reject a missing email with InvalidEmailException while preserving
+  the existing behavior for blank and valid email values.
+target_test:
+  class_name: dev.patchpilot.fixture.UserRegistrationServiceTest
+  method_name: shouldRejectNullEmail
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+expected_baseline_failure: test_failure
+agent_budgets: &agent_budgets
+  max_model_turns: 12
+  max_tool_calls: 30
+  max_patch_attempts: 4
+  max_target_test_executions: 8
+  max_regression_executions: 4
+  max_wall_clock_seconds: 1800
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+allowed_file_policy:
+  production_java_only: true

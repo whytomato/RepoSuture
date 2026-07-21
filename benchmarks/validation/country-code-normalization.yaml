@@ -1,0 +1,15 @@
+schema_version: 1
+id: country-code-normalization
+repository: ../fixtures/null-email-repo
+base_commit: 5f5882db3d5aaf86609401587853a01146c07b19
+issue_title: Recognize equivalent domestic country codes
+issue_description: >-
+  Domestic-zone lookup should accept country codes with harmless surrounding whitespace
+  and letter-case differences while still rejecting foreign country codes.
+target_test:
+  class_name: dev.patchpilot.fixture.ShippingZoneDirectoryTest
+  method_name: acceptsEquivalentDomesticCountryCodes
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/country-code-normalization.patch
+expected_baseline_failure: test_failure

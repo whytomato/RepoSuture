@@ -1,0 +1,15 @@
+schema_version: 1
+id: pagination-boundary
+repository: ../fixtures/null-email-repo
+base_commit: 08a837f962356daf1a3751d3216441fe366f4a76
+issue_title: Return complete catalog pages at a boundary
+issue_description: >-
+  A catalog page should contain the requested number of available items. The first page
+  of three items with a page size of two currently omits the second item.
+target_test:
+  class_name: dev.patchpilot.fixture.CatalogPaginatorTest
+  method_name: returnsCompletePageAtBoundary
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/pagination-boundary.patch
+expected_baseline_failure: test_failure

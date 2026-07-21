@@ -1,0 +1,13 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/UploadQuotaService.java b/src/main/java/dev/patchpilot/fixture/UploadQuotaService.java
+--- a/src/main/java/dev/patchpilot/fixture/UploadQuotaService.java
++++ b/src/main/java/dev/patchpilot/fixture/UploadQuotaService.java
+@@ -2,6 +2,9 @@ package dev.patchpilot.fixture;
+ 
+ public final class UploadQuotaService {
+     public int quotaFor(Plan plan, boolean trial) {
++        if (plan == Plan.PREMIUM && !trial) {
++            return 100;
++        }
+         if (trial) {
+             return 5;
+         }

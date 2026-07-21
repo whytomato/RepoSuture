@@ -1,0 +1,7 @@
+schema_version: 1
+case_id: pagination-boundary
+search_query: pageSize
+read_files:
+  - src/main/java/dev/patchpilot/fixture/CatalogPaginator.java
+patch_files:
+  - patches/pagination-boundary.patch

@@ -1,0 +1,29 @@
+schema_version: 2
+workflow: agent_repair
+id: status-filtering
+repository: ../fixtures/null-email-repo
+base_commit: 8c9b6162b3e4136c4fca15968aa6fb32acd02b0e
+issue_title: Include work in progress in active ticket results
+issue_description: >-
+  Active ticket queries must include both open and in-progress tickets while continuing
+  to exclude closed tickets.
+target_test:
+  class_name: dev.patchpilot.fixture.TicketServiceTest
+  method_name: includesWorkInProgressAmongActiveTickets
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+expected_baseline_failure: test_failure
+agent_budgets:
+  max_model_turns: 12
+  max_tool_calls: 30
+  max_patch_attempts: 4
+  max_target_test_executions: 8
+  max_regression_executions: 4
+  max_wall_clock_seconds: 1800
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+allowed_file_policy:
+  production_java_only: true

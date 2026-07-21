@@ -1,0 +1,12 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/TicketVisibilityPolicy.java b/src/main/java/dev/patchpilot/fixture/TicketVisibilityPolicy.java
+--- a/src/main/java/dev/patchpilot/fixture/TicketVisibilityPolicy.java
++++ b/src/main/java/dev/patchpilot/fixture/TicketVisibilityPolicy.java
+@@ -2,7 +2,6 @@ package dev.patchpilot.fixture;
+ 
+ public final class TicketVisibilityPolicy {
+     public boolean isActive(Ticket ticket) {
+-        return ticket.status() != TicketStatus.CLOSED
+-                && ticket.status() != TicketStatus.IN_PROGRESS;
++        return ticket.status() != TicketStatus.CLOSED;
+     }
+ }

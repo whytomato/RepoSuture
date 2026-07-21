@@ -1,6 +1,79 @@
-# PatchPilot Milestone 1 Execution Record
+# PatchPilot Execution Record
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
+
+## 2026-07-21 Milestone 3 — reproducible Java benchmark and evaluation harness
+
+### Living progress
+
+- [x] Re-read `AGENTS.md`, `README.md`, this plan, the deterministic verifier,
+  Agent tool runtime, repair orchestration, reporting invariants, and OpenAI provider.
+- [x] Create an implementation-only Git worktree from the clean `main` commit; keep the
+  user's original checkout free of source edits.
+- [x] Add six deterministic Java 17/Maven cases spanning the required bug categories,
+  including two navigation cases and a target-pass/regression-fail repair case.
+- [x] Add a versioned suite schema, strict public/hidden Case separation, stable
+  fingerprinting, and deterministic repository/base-commit validation.
+- [x] Add sequential deterministic validation and Agent benchmark commands with
+  per-case artifacts, aggregate JSON/CSV/Markdown, reproducibility metadata, and an
+  explicit failure taxonomy.
+- [x] Add a clearly labelled scripted/offline provider that still executes the real
+  worktree, tool, Patch, Maven, Surefire, target, and regression paths.
+- [x] Add unit and integration coverage for suite integrity, isolation, aggregation,
+  exit policies, secret absence, all six golden validations, and scripted repair.
+- [x] Run every required quality gate and CLI workflow, inspect representative artifacts,
+  repair observed failures, and record only results actually executed.
+
+### Design decisions
+
+- Milestone 3 is an evaluation layer over Milestones 1 and 2. `verify_case` remains the
+  golden-patch correctness path and `repair_case` remains the only Agent execution path.
+- Agent-visible schema-v2 Case files and hidden schema-v1 validation Case files remain
+  separate. Suite loading requires their public issue, target, timeout, repository,
+  and base-commit fields to agree. Only the Agent Case path can enter `repair_case` or a
+  provider prompt; validation paths and golden content never enter model messages or
+  tool results.
+- The six small fixtures share pinned Maven infrastructure but use distinct immutable
+  Git commits. Fingerprints cover canonical suite/Case data, referenced scripted and
+  golden inputs, every base commit, and each complete fixture tree.
+- Batch attempts run sequentially with fresh deterministic run IDs, fresh detached
+  worktrees, fresh model instances, and separate directories. A failed attempt is data,
+  not a reason to skip later attempts under the default continue policy.
+- Scripted/offline and live-model aggregates are mutually exclusive report modes. The
+  scripted mode is orchestration evidence only and will never be presented as model
+  capability.
+- Aggregate success comes only from deterministic `RunReport` evidence. Final model text
+  has no role in `RESOLVED`, failure classification, or resolution-rate calculation.
+- No monetary cost is inferred. Token counts are retained when providers expose them;
+  an estimate would require an explicit future pricing input.
+
+### Observed acceptance evidence
+
+- The final benchmark fingerprint was
+  `20709966636b87d77e5a50fd0026557d405c7aa94955824ec80abb5e986a9ff0` in both
+  validation and scripted aggregates.
+- `validate-benchmark` executed real Maven/JUnit and validated all six Cases: each
+  baseline target was observed failing, each hidden production Patch made the target
+  pass, each full regression passed, each source repository stayed unchanged, and every
+  temporary worktree was removed.
+- The final scripted/offline batch resolved 6/6 harness attempts. This is not a live
+  model capability result. The regression-trap run recorded its first target PASS plus
+  regression FAIL before a second complete Patch passed both tests.
+- The representative trap run used 6 model turns, 6 tool calls, 2 Patch attempts,
+  3 target-test executions (including baseline), and 2 regression executions. All six
+  scripted runs reported zero tokens because `FakeLLM` has no provider token usage.
+- The existing deterministic Case and existing FakeLLM repair workflow both completed
+  as `RESOLVED` after the Milestone 3 changes.
+- Final quality gates: `python -m pytest -q` reported 182 passed with no skips;
+  `python -m ruff check .` passed; `python -m mypy src` found no issues in 22 files.
+  Java/Maven integration ran with Java 21.0.8 compiling the fixtures at Java release 17,
+  Maven 3.9.9, and Maven Wrapper 3.3.4.
+- No live benchmark was executed because neither `OPENAI_API_KEY` nor
+  `PATCHPILOT_MODEL` was configured. No live result or resolution rate is claimed.
+- During implementation, artifact inspection caught one malformed scripted Patch hunk;
+  it was corrected and the full batch rerun. Full integration testing also caught a
+  Windows CRLF mismatch in the legacy golden Patch after deterministic checkout rules;
+  normalizing that Patch restored all Milestone 1 integration tests.
 
 ## 2026-07-20 Milestone 2 Part 2 — OpenAI Responses API repair
 
@@ -44,8 +117,7 @@ Last updated: 2026-07-20
 
 ### Current environment and validation status
 
-- User-provided Conda Python: `D:\Program Files\anaconda\envs\patchpilot\python.exe`
-  (Python 3.11.15).
+- User-provided `patchpilot` Conda environment: Python 3.11.15.
 - Official PyPI inspection on 2026-07-20 reported `openai` 2.46.0 as current; validation
   will use a maintainable `openai>=2.46.0,<3` dependency range and record the installed
   SDK version.
@@ -393,7 +465,8 @@ above will be updated with their actual results; no prior result is treated as c
 
 ## Problems encountered and resolutions
 
-- The initial shell used Python 3.9.13 without project tools. The existing `D:\Program Files\anaconda\envs\patchpilot` environment provides Python 3.11.15; all implementation validation used it.
+- The initial shell used Python 3.9.13 without project tools. The existing `patchpilot`
+  Conda environment provides Python 3.11.15; all implementation validation used it.
 - No system `mvn` was installed. The fixture now includes the official Wrapper scripts and a fixed Maven distribution.
 - A first Windows integration run placed the worktree below a long pytest artifact path and Git failed with `'$GIT_DIR' too big`. Worktrees now use a short system-temp root.
 - Managed sandbox and desktop-user SIDs differ. The fixture Git repository was initialized under explicit approval, and PatchPilot uses an exact per-command `safe.directory` value instead of changing global Git configuration.
@@ -412,7 +485,7 @@ Environment and dependency checks:
 - `java -version` — Java 17.0.6 available.
 - `mvn -version` — system Maven absent.
 - `git --version` — Git 2.47.1.windows.2 available.
-- `D:\Program Files\anaconda\envs\patchpilot\python.exe --version` — Python 3.11.15.
+- `python --version` in the `patchpilot` Conda environment — Python 3.11.15.
 - `python -m pip install --disable-pip-version-check -e ".[dev]"` in the `patchpilot` environment — succeeded.
 
 TDD and focused validation (expected RED failures were followed by the listed GREEN results):
@@ -446,7 +519,8 @@ Documented CLI example:
 - Native `conda activate patchpilot` — failed before project execution due the external PATH/GBK Conda error described above.
 - With the `patchpilot` Conda environment paths explicitly active, `patchpilot verify-case benchmarks/cases/null-email.yaml --artifacts-dir .artifacts` — exit code 0 and **RESOLVED**.
 - CLI outcomes: baseline `FAIL`, patched target `PASS`, regression `PASS`.
-- Persistent run artifacts: `J:\university 5.2\PatchPilot\.artifacts\null-email-20260720T104358155084Z-092bf5f403da`.
+- Persistent run artifacts:
+  `.artifacts/null-email-20260720T104358155084Z-092bf5f403da`.
 - Post-run evidence: all six required files exist, original repository unchanged is `true`, Patch applied is `true`, worktree no longer exists, fixture Git status is clean at the fixed commit.
 - Final read-only delivery audit — **PASS**; Case commit equals fixture HEAD, only the fixture's main worktree is registered, and all required artifact paths were re-opened successfully.
 

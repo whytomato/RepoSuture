@@ -4,7 +4,7 @@ PatchPilot 是面向 Java Maven 项目的测试驱动 Bug 修复工具。它把�
 与最终判定严格分离：模型只能通过受限工具观察和修改隔离 worktree；只有真实
 Maven/JUnit 证据能够产生 `RESOLVED`。
 
-当前包含两个可并存的工作流：
+当前包含三个可并存的工作流：
 
 - Milestone 1 — deterministic execution environment：复现固定 commit 上的目标测试失败，
   应用 Case 中的 golden Patch，再运行目标测试和完整回归。命令为 `verify-case`，无需
@@ -12,6 +12,9 @@ Maven/JUnit 证据能够产生 `RESOLVED`。
 - Milestone 2 — Agent runtime foundation 与 OpenAI Responses API repair：单个模型通过六个
   PatchPilot 自定义工具提出生产代码 Patch；harness 在每次接受 Patch 后自动验证。命令为
   `repair`。
+- Milestone 3 — reproducible Java benchmark and evaluation harness：用六个固定 Java 17/Maven
+  缺陷验证 benchmark 完整性，顺序执行彼此隔离的 Agent 尝试，并生成结构化逐次与聚合报告。
+  命令为 `validate-benchmark` 和 `benchmark`。
 
 本项目没有多 Agent、LangChain、LangGraph、OpenAI Agents SDK、MCP、RAG、向量数据库、
 Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放 Shell、
@@ -24,6 +27,7 @@ Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模
 - 已存在且可确定复现的目标测试
 - Git-style UTF-8 Unified Diff
 - 单 Case、单 Agent、同步 Responses API 调用
+- 六 Case MVP benchmark、顺序批处理、scripted/offline 编排验证与 live OpenAI 评估
 - 隔离 detached Git worktree、结构化 JSON report 与有界 JSONL trace
 - OpenAI 官方 Python SDK；本次验证使用 2.46.0，依赖声明为 `openai>=2.46.0,<3`
 
@@ -31,7 +35,8 @@ Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模
 
 Milestone 1 的 `ProcessRunner`、`GitWorktree`、`MavenRunner`、`PatchApplier` 和报告状态机
 仍是安全与确定性底座。Milestone 2 在其上增加 provider-independent `LLMClient`、
-`ToolExecutor`、`OpenAIResponsesClient` 与 `RepairRunner`，没有重写底座。
+`ToolExecutor`、`OpenAIResponsesClient` 与 `RepairRunner`。Milestone 3 只在这两个既有流程上
+增加 suite 校验、顺序调度、指纹和聚合报告，没有重写底座或增加 Agent 能力。
 
 ```mermaid
 sequenceDiagram
@@ -135,7 +140,54 @@ python benchmarks/run_fake_repair.py `
   --artifacts-dir .artifacts-m2-fake
 ```
 
-所有非 `RESOLVED` 状态都使用非零 CLI 退出码。
+Milestone 3 benchmark 先用隐藏 golden Patch 证明六个 Case 本身有效：
+
+```powershell
+patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-benchmark-validation
+```
+
+离线 scripted 模式仍执行真实 `ToolExecutor`、Git worktree、Patch、Maven/JUnit、目标测试和
+完整回归；只有模型动作是固定脚本。它只验证 harness，不能作为模型能力数据：
+
+```powershell
+patchpilot benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-benchmark-scripted `
+  --provider scripted `
+  --runs-per-case 1
+```
+
+live 模式为每个 Case 建立全新的 OpenAI 会话和 worktree，默认顺序执行且失败后继续：
+
+```powershell
+$env:OPENAI_API_KEY = "<your-api-key>"
+$env:PATCHPILOT_MODEL = "<your-model-name>"
+
+patchpilot benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-benchmark-live `
+  --provider openai `
+  --runs-per-case 1
+```
+
+可重复使用 `--case <id>` 过滤 Case，并可覆盖 turns、tool calls、Patch、目标测试、回归和总时长
+预算；`--random-seed` 只记录 provider 适用时的元数据，不伪造确定性。live 调用会使用 API，
+可能产生费用。PatchPilot 不使用硬编码价格计算成本。
+
+MVP 的六类缺陷为 null 输入验证、分页边界、enum/status 过滤、条件/布尔逻辑、字符串规范化，
+以及可令目标通过但破坏回归的 trap。每个 Case 都有至少一个非目标回归测试；其中两个 Case
+要求在相关的两个生产文件间导航。设计、指标和新增 Case 步骤见
+[`docs/BENCHMARK.md`](docs/BENCHMARK.md)。
+
+逐次报告记录 baseline、目标与回归结果、模型轮数、按工具名计数、Patch 尝试与拒绝、测试
+执行次数、provider 暴露的 token、模型请求/API 错误、墙钟/模型/测试耗时、文件与增删行、
+完整性检查及确定性失败分类。聚合报告给出原始经验成功率、平均值和中位数、逐 Case 成功率、
+工具分布与失败分析；原始经验率不称为 `pass@k`。`scripted/offline` 与 `live model` 永不混入
+同一能力聚合。
+
+`verify-case` 和 `repair` 仅在 `RESOLVED` 时返回 0。benchmark 使用一致的批处理退出策略：
+至少一次确定性解决返回 0（其余失败仍保留在报告）；suite 无效返回 2；没有可执行尝试或批次
+基础设施失败返回 3；尝试均执行但零解决返回 4。`validate-benchmark` 仅在全部 Case 有效时返回
+0。精确定义和失败 taxonomy 见 benchmark 文档。
 
 ## Case 格式
 
@@ -145,7 +197,7 @@ Milestone 1 schema v1 含仅供基础设施验证的 golden Patch：
 schema_version: 1
 id: null-email
 repository: ../fixtures/null-email-repo
-base_commit: 5f31109dd8742b5515baae16c9f7eefb0ed3deba
+base_commit: edd183a37038d966afca53e94e8d8819fc508bb8
 issue_title: Reject null email during user registration
 issue_description: Registration must reject null email with InvalidEmailException.
 target_test:
@@ -164,7 +216,7 @@ schema_version: 2
 workflow: agent_repair
 id: null-email-agent
 repository: ../fixtures/null-email-repo
-base_commit: 5f31109dd8742b5515baae16c9f7eefb0ed3deba
+base_commit: edd183a37038d966afca53e94e8d8819fc508bb8
 issue_title: Reject null email during user registration
 issue_description: Registration must reject null email with InvalidEmailException.
 target_test:
@@ -254,6 +306,10 @@ Agent report 还记录 provider/model、模型轮数、工具调用总数及按�
 python -m pytest -q
 python -m ruff check .
 python -m mypy src
+patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-benchmark-validation
+patchpilot benchmark benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-benchmark-scripted --provider scripted
 ```
 
 默认测试通过注入式假 SDK 覆盖 Responses API 协议，不使用网络。FakeLLM Agent 集成测试不会
@@ -270,6 +326,8 @@ python -m pytest tests/test_repair_runner.py -q -s
 
 - 仅支持标准单模块 Maven/Surefire `target/surefire-reports` 布局和已有 JUnit 5 测试。
 - 同步单 Agent；没有流式 UI、并行工具调用、会话持久化或跨 Case 记忆。
+- MVP 只有六个小型人工策展 Case，不代表所有 Java 项目、框架或缺陷分布；跨机器还会受 OS、
+  Java/Maven 版本、依赖缓存和硬件影响。
 - Agent 候选仅限文本 Unified Diff；不支持 quoted 特殊路径、rename/copy、binary、symlink 或
   submodule Patch。
 - 首次 Maven 下载与 live OpenAI 调用需要网络；模型行为、费用、配额和服务可用性不确定。
@@ -277,5 +335,5 @@ python -m pytest tests/test_repair_runner.py -q -s
 - Windows/Conda 的旧 GBK shell 可能因既有 PATH 字符在 `conda activate` 时失败；可使用
   `conda run -n patchpilot ...`，不影响标准 `python -m ...` 用法。
 
-下一阶段建议是加固 live 评估、流式可观测性和可恢复的 provider 会话，而不是开始多 Agent、
-MCP、RAG、自动测试生成、EvoMaster、benchmark 扩展或 UI 工作。
+下一阶段建议是基于真实、明确执行的 live 结果加固评估与 provider 可恢复性，而不是开始多
+Agent、MCP、RAG、自动测试生成、EvoMaster、LSP 或 UI 工作。

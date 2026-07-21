@@ -1,0 +1,11 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/ShippingEligibility.java b/src/main/java/dev/patchpilot/fixture/ShippingEligibility.java
+--- a/src/main/java/dev/patchpilot/fixture/ShippingEligibility.java
++++ b/src/main/java/dev/patchpilot/fixture/ShippingEligibility.java
+@@ -2,6 +2,6 @@ package dev.patchpilot.fixture;
+ 
+ public final class ShippingEligibility {
+     public boolean canShip(boolean addressVerified, boolean paymentAuthorized) {
+-        return addressVerified || paymentAuthorized;
++        return addressVerified && paymentAuthorized;
+     }
+ }

@@ -1,0 +1,15 @@
+schema_version: 1
+id: status-filtering
+repository: ../fixtures/null-email-repo
+base_commit: 8c9b6162b3e4136c4fca15968aa6fb32acd02b0e
+issue_title: Include work in progress in active ticket results
+issue_description: >-
+  Active ticket queries must include both open and in-progress tickets while continuing
+  to exclude closed tickets.
+target_test:
+  class_name: dev.patchpilot.fixture.TicketServiceTest
+  method_name: includesWorkInProgressAmongActiveTickets
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/status-filtering.patch
+expected_baseline_failure: test_failure

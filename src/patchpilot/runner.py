@@ -92,6 +92,7 @@ def verify_case(
     *,
     keep_worktree: bool = False,
     process_runner: ProcessRunner | None = None,
+    run_id: str | None = None,
 ) -> RunReport:
     """Verify one Bug Case and persist a report for every classified outcome."""
 
@@ -116,7 +117,7 @@ def verify_case(
         )
         effective_artifacts_dir = Path(tempfile.gettempdir()) / "patchpilot-artifacts"
 
-    artifacts = create_artifact_paths(effective_artifacts_dir, task_hint)
+    artifacts = create_artifact_paths(effective_artifacts_dir, task_hint, run_id=run_id)
     trace = TraceWriter(artifacts.trace)
     trace.emit(
         "run_started",
@@ -566,6 +567,13 @@ def verify_case(
         failure_reason=failure_reason,
         artifacts=artifacts.as_report_mapping(),
         artifact_metadata=artifact_metadata,
+        target_test_execution_count=sum(
+            result.outcome is not TestOutcome.NOT_RUN for result in (baseline, patched_target)
+        ),
+        regression_execution_count=int(regression.outcome is not TestOutcome.NOT_RUN),
+        test_execution_duration_seconds=(
+            baseline.duration + patched_target.duration + regression.duration
+        ),
     )
     write_report(report, artifacts.report)
     return report

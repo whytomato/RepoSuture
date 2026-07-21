@@ -1,0 +1,8 @@
+schema_version: 1
+case_id: status-filtering
+search_query: activeTickets
+read_files:
+  - src/main/java/dev/patchpilot/fixture/TicketService.java
+  - src/main/java/dev/patchpilot/fixture/TicketVisibilityPolicy.java
+patch_files:
+  - patches/status-filtering.patch

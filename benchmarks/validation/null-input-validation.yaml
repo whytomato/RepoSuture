@@ -1,0 +1,15 @@
+schema_version: 1
+id: null-input-validation
+repository: ../fixtures/null-email-repo
+base_commit: edd183a37038d966afca53e94e8d8819fc508bb8
+issue_title: Reject a missing email during registration
+issue_description: >-
+  Registration must reject a missing email with InvalidEmailException while preserving
+  the existing behavior for blank and valid email values.
+target_test:
+  class_name: dev.patchpilot.fixture.UserRegistrationServiceTest
+  method_name: shouldRejectNullEmail
+target_test_timeout_seconds: 180
+regression_timeout_seconds: 300
+golden_patch: patches/null-input-validation.patch
+expected_baseline_failure: test_failure

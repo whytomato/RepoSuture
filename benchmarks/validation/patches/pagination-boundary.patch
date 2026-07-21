@@ -1,0 +1,12 @@
+diff --git a/src/main/java/dev/patchpilot/fixture/CatalogPaginator.java b/src/main/java/dev/patchpilot/fixture/CatalogPaginator.java
+--- a/src/main/java/dev/patchpilot/fixture/CatalogPaginator.java
++++ b/src/main/java/dev/patchpilot/fixture/CatalogPaginator.java
+@@ -12,7 +12,7 @@ public final class CatalogPaginator {
+         if (fromIndex >= items.size()) {
+             return List.of();
+         }
+-        int toIndex = Math.min(fromIndex + pageSize - 1, items.size());
++        int toIndex = Math.min(fromIndex + pageSize, items.size());
+         return List.copyOf(items.subList(fromIndex, toIndex));
+     }
+ }

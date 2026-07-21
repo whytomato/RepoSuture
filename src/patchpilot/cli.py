@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from patchpilot.benchmark import (
+    benchmark_exit_code,
+    run_benchmark,
+    validate_benchmark,
+)
+from patchpilot.benchmark_spec import BenchmarkSuiteError
 from patchpilot.repair import repair_case
 from patchpilot.reporting import FinalStatus, RunReport
 from patchpilot.runner import verify_case
@@ -159,6 +166,159 @@ def repair_command(
 
     _print_summary(report)
     code = _exit_code(report.final_status)
+    if code:
+        raise typer.Exit(code=code)
+
+
+@app.command("validate-benchmark")
+def validate_benchmark_command(
+    suite_file: Annotated[
+        Path,
+        typer.Argument(help="Path to a versioned PatchPilot benchmark suite YAML file."),
+    ],
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option(
+            "--artifacts-dir",
+            help="Directory for validation aggregates and deterministic per-case evidence.",
+        ),
+    ] = Path(".artifacts-benchmark-validation"),
+) -> None:
+    """Validate every benchmark Case with its hidden Patch and real Maven/JUnit."""
+
+    try:
+        summary = validate_benchmark(
+            suite_file,
+            artifacts_dir,
+            progress=typer.echo,
+            cli_arguments=sys.argv[1:],
+        )
+    except BenchmarkSuiteError as exc:
+        typer.echo(f"Invalid benchmark suite: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INVALID_CASE) from exc
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Benchmark validation infrastructure error: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INFRASTRUCTURE) from exc
+
+    typer.echo(f"Validated cases: {summary.valid_cases}/{summary.total_cases}")
+    typer.echo(f"Validation report: {summary.artifacts['validation_report_markdown']}")
+    if not summary.all_valid:
+        raise typer.Exit(code=EXIT_VERIFICATION_FAILED)
+
+
+@app.command("benchmark")
+def benchmark_command(
+    suite_file: Annotated[
+        Path,
+        typer.Argument(help="Path to a versioned PatchPilot benchmark suite YAML file."),
+    ],
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option(
+            "--artifacts-dir",
+            help="Directory for per-run evidence and aggregate benchmark reports.",
+        ),
+    ] = Path(".artifacts-benchmark"),
+    provider: Annotated[
+        str,
+        typer.Option("--provider", help="Provider: openai (live) or scripted (offline)."),
+    ] = "openai",
+    model: Annotated[
+        str | None,
+        typer.Option("--model", help="Live model override; otherwise PATCHPILOT_MODEL."),
+    ] = None,
+    runs_per_case: Annotated[
+        int | None,
+        typer.Option("--runs-per-case", min=1, max=20, help="Attempts per selected Case."),
+    ] = None,
+    case_ids: Annotated[
+        list[str] | None,
+        typer.Option("--case", help="Case id filter; repeat to select multiple Cases."),
+    ] = None,
+    continue_on_failure: Annotated[
+        bool,
+        typer.Option(
+            "--continue-on-failure/--stop-on-failure",
+            help="Continue after unresolved attempts (default) or stop at the first one.",
+        ),
+    ] = True,
+    random_seed: Annotated[
+        int | None,
+        typer.Option("--random-seed", help="Optional reproducibility metadata for providers."),
+    ] = None,
+    max_turns: Annotated[
+        int | None,
+        typer.Option("--max-turns", min=1, max=50, help="Per-run maximum model turns."),
+    ] = None,
+    max_tool_calls: Annotated[
+        int | None,
+        typer.Option("--max-tool-calls", min=1, max=200, help="Per-run tool-call limit."),
+    ] = None,
+    max_patch_attempts: Annotated[
+        int | None,
+        typer.Option("--max-patch-attempts", min=1, max=10, help="Per-run Patch limit."),
+    ] = None,
+    max_target_test_executions: Annotated[
+        int | None,
+        typer.Option(
+            "--max-target-test-executions",
+            min=1,
+            max=25,
+            help="Per-run target-test execution limit, including baseline.",
+        ),
+    ] = None,
+    max_regression_executions: Annotated[
+        int | None,
+        typer.Option(
+            "--max-regression-executions",
+            min=1,
+            max=10,
+            help="Per-run full-regression execution limit.",
+        ),
+    ] = None,
+    max_wall_clock_seconds: Annotated[
+        int | None,
+        typer.Option(
+            "--max-wall-clock-seconds",
+            min=1,
+            max=86_400,
+            help="Per-run wall-clock limit in seconds.",
+        ),
+    ] = None,
+) -> None:
+    """Run sequential fresh Agent attempts and aggregate deterministic outcomes."""
+
+    try:
+        summary = run_benchmark(
+            suite_file,
+            artifacts_dir,
+            provider=provider,
+            model_override=model,
+            runs_per_case=runs_per_case,
+            case_ids=case_ids,
+            continue_on_failure=continue_on_failure,
+            random_seed=random_seed,
+            max_turns=max_turns,
+            max_tool_calls=max_tool_calls,
+            max_patch_attempts=max_patch_attempts,
+            max_target_test_executions=max_target_test_executions,
+            max_regression_executions=max_regression_executions,
+            max_wall_clock_seconds=max_wall_clock_seconds,
+            progress=typer.echo,
+            cli_arguments=sys.argv[1:],
+        )
+    except BenchmarkSuiteError as exc:
+        typer.echo(f"Invalid benchmark suite: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INVALID_CASE) from exc
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Benchmark infrastructure error: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INFRASTRUCTURE) from exc
+
+    typer.echo(
+        f"Resolved attempts: {summary.resolved_attempts}/{summary.total_attempts}"
+    )
+    typer.echo(f"Benchmark report: {summary.artifacts['benchmark_report_markdown']}")
+    code = benchmark_exit_code(summary)
     if code:
         raise typer.Exit(code=code)
 

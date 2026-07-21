@@ -78,10 +78,16 @@ def repair_case(
     max_turns: int | None = None,
     max_tool_calls: int | None = None,
     max_patch_attempts: int | None = None,
+    max_target_test_executions: int | None = None,
+    max_regression_executions: int | None = None,
+    max_wall_clock_seconds: int | None = None,
     keep_worktree: bool = False,
     llm_client: LLMClient | None = None,
+    injected_provider: str | None = None,
+    injected_model: str | None = None,
     process_runner: ProcessRunner | None = None,
     progress: ProgressCallback | None = None,
+    run_id: str | None = None,
 ) -> RunReport:
     """Run one bounded repair and persist deterministic evidence for every outcome."""
 
@@ -105,7 +111,7 @@ def repair_case(
         )
         effective_artifacts_dir = Path(tempfile.gettempdir()) / "patchpilot-artifacts"
 
-    artifacts = create_artifact_paths(effective_artifacts_dir, task_hint)
+    artifacts = create_artifact_paths(effective_artifacts_dir, task_hint, run_id=run_id)
     trace = TraceWriter(artifacts.trace, run_id=artifacts.run_id)
     trace.emit(
         "run_started",
@@ -147,6 +153,7 @@ def repair_case(
     reasoning_tokens = 0
     api_request_ids: list[str] = []
     model_latency = 0.0
+    test_execution_duration = 0.0
     final_visible_message: str | None = None
     environment: PatchPilotToolEnvironment | None = None
     manager: GitWorktree | None = None
@@ -178,6 +185,9 @@ def repair_case(
             max_turns=max_turns,
             max_tool_calls=max_tool_calls,
             max_patch_attempts=max_patch_attempts,
+            max_target_test_executions=max_target_test_executions,
+            max_regression_executions=max_regression_executions,
+            max_wall_clock_seconds=max_wall_clock_seconds,
         )
         if budget_error is not None:
             final_status = FinalStatus.INVALID_CASE
@@ -186,9 +196,15 @@ def repair_case(
             turn_limit = max_turns or case.agent_budgets.max_model_turns
             tool_limit = max_tool_calls or case.agent_budgets.max_tool_calls
             patch_limit = max_patch_attempts or case.agent_budgets.max_patch_attempts
-            wall_limit = case.agent_budgets.max_wall_clock_seconds
-            target_limit = case.agent_budgets.max_target_test_executions
-            regression_limit = case.agent_budgets.max_regression_executions
+            wall_limit = max_wall_clock_seconds or case.agent_budgets.max_wall_clock_seconds
+            target_limit = (
+                max_target_test_executions
+                or case.agent_budgets.max_target_test_executions
+            )
+            regression_limit = (
+                max_regression_executions
+                or case.agent_budgets.max_regression_executions
+            )
             if active_llm is None:
                 try:
                     config = load_openai_model_config(
@@ -224,8 +240,10 @@ def repair_case(
                         "verify the installed SDK and model configuration"
                     )
             else:
-                provider = "fake" if isinstance(active_llm, FakeLLM) else "injected"
-                model_name = type(active_llm).__name__
+                provider = injected_provider or (
+                    "fake" if isinstance(active_llm, FakeLLM) else "injected"
+                )
+                model_name = injected_model or type(active_llm).__name__
 
     if (
         case is not None
@@ -261,6 +279,7 @@ def repair_case(
                     attempt_label="baseline",
                 )
                 target_executions += 1
+                test_execution_duration += baseline_execution.process.duration_seconds
                 baseline = baseline_execution.as_report()
                 trace.emit(
                     "target_test_completed",
@@ -498,6 +517,9 @@ def repair_case(
                         if call.name == "run_target_test" and result.success:
                             target_executions += 1
                             if environment.latest_target_execution is not None:
+                                test_execution_duration += (
+                                    environment.latest_target_execution.process.duration_seconds
+                                )
                                 patched_target = environment.latest_target_execution.as_report()
                                 _append_execution_log(
                                     artifacts.patched_target_log,
@@ -556,6 +578,9 @@ def repair_case(
                                 attempt_label=f"patch-{len(environment.patch_attempts)}",
                             )
                             target_executions += 1
+                            test_execution_duration += (
+                                target_execution.process.duration_seconds
+                            )
                             patched_target = target_execution.as_report()
                             emit_progress(
                                 f"Target test: {patched_target.outcome.value}"
@@ -621,6 +646,9 @@ def repair_case(
                                         attempt_label=f"patch-{len(environment.patch_attempts)}",
                                     )
                                     regression_executions += 1
+                                    test_execution_duration += (
+                                        regression_execution.process.duration_seconds
+                                    )
                                     regression = regression_execution.as_report()
                                     emit_progress(
                                         f"Regression: {regression.outcome.value}"
@@ -804,6 +832,12 @@ def repair_case(
         )
         for attempt in (environment.patch_attempts if environment else [])
     ]
+    model_request_count = _client_counter(
+        active_llm,
+        "model_request_count",
+        fallback=model_turns,
+    )
+    api_error_count = _client_counter(active_llm, "api_error_count", fallback=0)
     report = RunReport(
         run_id=artifacts.run_id,
         task_id=case.id if case is not None else task_hint,
@@ -849,8 +883,11 @@ def repair_case(
         input_token_usage=input_tokens,
         output_token_usage=output_tokens,
         reasoning_token_usage=reasoning_tokens,
+        model_request_count=model_request_count,
+        api_error_count=api_error_count,
         api_request_ids=api_request_ids,
         model_latency_seconds=model_latency,
+        test_execution_duration_seconds=test_execution_duration,
         final_visible_model_message=final_visible_message,
         final_deterministic_status=final_status,
     )
@@ -1033,14 +1070,34 @@ def _validate_budget_overrides(
     max_turns: int | None,
     max_tool_calls: int | None,
     max_patch_attempts: int | None,
+    max_target_test_executions: int | None,
+    max_regression_executions: int | None,
+    max_wall_clock_seconds: int | None,
 ) -> str | None:
     for name, value, upper in (
         ("max_turns", max_turns, 50),
         ("max_tool_calls", max_tool_calls, 200),
         ("max_patch_attempts", max_patch_attempts, 10),
+        ("max_target_test_executions", max_target_test_executions, 25),
+        ("max_regression_executions", max_regression_executions, 10),
+        ("max_wall_clock_seconds", max_wall_clock_seconds, 86_400),
     ):
         if value is not None and (
             isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= upper
         ):
             return f"{name} must be an integer between 1 and {upper}"
     return None
+
+
+def _client_counter(
+    client: LLMClient | None,
+    attribute: str,
+    *,
+    fallback: int,
+) -> int:
+    if client is None:
+        return fallback
+    value = getattr(client, attribute, fallback)
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+        return value
+    return fallback

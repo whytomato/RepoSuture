@@ -1,0 +1,7 @@
+schema_version: 1
+case_id: shipping-eligibility
+search_query: canShip
+read_files:
+  - src/main/java/dev/patchpilot/fixture/ShippingEligibility.java
+patch_files:
+  - patches/shipping-eligibility.patch

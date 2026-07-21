@@ -1,7 +1,7 @@
 schema_version: 1
 id: null-email-missing-test
 repository: ../fixtures/null-email-repo
-base_commit: 5f31109dd8742b5515baae16c9f7eefb0ed3deba
+base_commit: edd183a37038d966afca53e94e8d8819fc508bb8
 issue_title: Deliberate audit failure for a missing target selector
 issue_description: >-
   This audit-only Case intentionally selects a nonexistent method so the CLI failure

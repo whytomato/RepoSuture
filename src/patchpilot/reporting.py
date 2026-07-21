@@ -251,10 +251,13 @@ class RunReport(BaseModel):
     input_token_usage: int = Field(default=0, ge=0)
     output_token_usage: int = Field(default=0, ge=0)
     reasoning_token_usage: int = Field(default=0, ge=0)
+    model_request_count: int = Field(default=0, ge=0)
+    api_error_count: int = Field(default=0, ge=0)
     api_request_ids: list[
         Annotated[str, StringConstraints(strict=True, max_length=512)]
     ] = Field(default_factory=list, max_length=200)
     model_latency_seconds: float = Field(default=0.0, ge=0)
+    test_execution_duration_seconds: float = Field(default=0.0, ge=0)
     final_visible_model_message: Annotated[
         str, StringConstraints(strict=True, max_length=65_536)
     ] | None = None
@@ -572,15 +575,25 @@ class ArtifactPaths:
         }
 
 
-def create_artifact_paths(artifacts_root: Path, task_hint: str) -> ArtifactPaths:
+def create_artifact_paths(
+    artifacts_root: Path,
+    task_hint: str,
+    *,
+    run_id: str | None = None,
+) -> ArtifactPaths:
     """Create a unique run directory strictly below the caller-selected root."""
 
     artifacts_root.mkdir(parents=True, exist_ok=True)
     resolved_root = artifacts_root.expanduser().resolve(strict=True)
-    safe_task = re.sub(r"[^a-zA-Z0-9._-]", "-", task_hint).strip("-.")[:48] or "case"
-    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    run_id = f"{safe_task}-{timestamp}-{uuid.uuid4().hex[:12]}"
-    directory = (resolved_root / run_id).resolve(strict=False)
+    if run_id is None:
+        safe_task = re.sub(r"[^a-zA-Z0-9._-]", "-", task_hint).strip("-.")[:48] or "case"
+        timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+        effective_run_id = f"{safe_task}-{timestamp}-{uuid.uuid4().hex[:12]}"
+    else:
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,159}", run_id) is None:
+            raise ValueError("explicit run_id must be a safe 1-160 character identifier")
+        effective_run_id = run_id
+    directory = (resolved_root / effective_run_id).resolve(strict=False)
     if directory.parent != resolved_root:
         raise ValueError("generated artifact path escaped the artifact root")
     directory.mkdir()
@@ -588,7 +601,7 @@ def create_artifact_paths(artifacts_root: Path, task_hint: str) -> ArtifactPaths
     if directory.parent != resolved_root:
         raise ValueError("created artifact directory escaped the artifact root")
     paths = ArtifactPaths(
-        run_id=run_id,
+        run_id=effective_run_id,
         directory=directory,
         report=directory / "report.json",
         trace=directory / "trace.jsonl",

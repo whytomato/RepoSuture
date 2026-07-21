@@ -1,0 +1,8 @@
+schema_version: 1
+case_id: country-code-normalization
+search_query: isDomestic
+read_files:
+  - src/main/java/dev/patchpilot/fixture/ShippingZoneDirectory.java
+  - src/main/java/dev/patchpilot/fixture/CountryCodeNormalizer.java
+patch_files:
+  - patches/country-code-normalization.patch
