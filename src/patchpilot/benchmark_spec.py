@@ -31,6 +31,7 @@ from patchpilot.case_spec import (
     load_case,
 )
 from patchpilot.process import ProcessRunner
+from patchpilot.workspace import WorkspaceError, canonical_git_root
 
 MAX_SUITE_BYTES = 1_048_576
 MAX_SCRIPT_BYTES = 1_048_576
@@ -282,32 +283,24 @@ def _validate_repository_and_tree(
         raise BenchmarkSuiteError(f"benchmark repository is unavailable: {repository}") from exc
     if not resolved_repository.is_dir() or not resolved_repository.is_relative_to(benchmark_root):
         raise BenchmarkSuiteError("benchmark repository must be a directory inside benchmarks/")
-    safe_repository = str(resolved_repository).replace("\\", "/")
-    prefix = ["git", "-c", f"safe.directory={safe_repository}"]
-    top_level = runner.run(
-        [*prefix, "rev-parse", "--show-toplevel"],
-        cwd=resolved_repository,
-        timeout_seconds=30,
-    )
-    if not top_level.succeeded:
-        detail = top_level.infrastructure_error or top_level.stderr or top_level.stdout
-        raise BenchmarkSuiteError(f"invalid benchmark repository: {detail.strip()}")
     try:
-        actual_top_level = Path(top_level.stdout.strip()).resolve(strict=True)
-    except OSError as exc:
-        raise BenchmarkSuiteError("unable to resolve benchmark repository top level") from exc
-    if actual_top_level != resolved_repository:
-        raise BenchmarkSuiteError("configured benchmark repository is not its Git top level")
+        actual_top_level = canonical_git_root(resolved_repository, runner)
+    except WorkspaceError as exc:
+        raise BenchmarkSuiteError(f"invalid benchmark repository: {exc}") from exc
+    if not actual_top_level.is_relative_to(benchmark_root):
+        raise BenchmarkSuiteError("benchmark Git roots must remain inside benchmarks/")
+    safe_repository = str(actual_top_level).replace("\\", "/")
+    prefix = ["git", "-c", f"safe.directory={safe_repository}"]
     commit = runner.run(
         [*prefix, "cat-file", "-e", f"{base_commit}^{{commit}}"],
-        cwd=resolved_repository,
+        cwd=actual_top_level,
         timeout_seconds=30,
     )
     if not commit.succeeded:
         raise BenchmarkSuiteError(f"invalid base commit for benchmark repository: {base_commit}")
     tree = runner.run(
         [*prefix, "ls-tree", "-r", "--full-tree", "-z", base_commit],
-        cwd=resolved_repository,
+        cwd=actual_top_level,
         timeout_seconds=30,
     )
     if not tree.succeeded or tree.stdout_truncated or tree.stderr_truncated:
@@ -387,6 +380,7 @@ def load_benchmark_suite(
         raise BenchmarkSuiteError(f"invalid benchmark suite: {exc}") from exc
     suite_dir = suite_path.parent
     benchmark_root = suite_dir.parent.resolve(strict=True)
+    runner = process_runner or ProcessRunner(max_output_bytes=MAX_FINGERPRINT_GIT_OUTPUT_BYTES)
     loaded_cases: list[LoadedBenchmarkCase] = []
     for reference in manifest.cases:
         try:
@@ -427,12 +421,20 @@ def load_benchmark_suite(
                 f"Agent budgets for {reference.id} disagree with suite defaults"
             )
         try:
-            repository = agent_case.repository.resolve(strict=True)
+            configured_repository = agent_case.repository.resolve(strict=True)
             golden_patch = validation_case.golden_patch.resolve(strict=True)
         except OSError as exc:
             raise BenchmarkSuiteError(f"linked benchmark path is unavailable: {exc}") from exc
-        if not repository.is_relative_to(benchmark_root):
+        if not configured_repository.is_relative_to(benchmark_root):
             raise BenchmarkSuiteError("benchmark repositories must remain inside benchmarks/")
+        try:
+            repository = canonical_git_root(configured_repository, runner)
+        except WorkspaceError as exc:
+            raise BenchmarkSuiteError(f"invalid benchmark repository: {exc}") from exc
+        if not repository.is_relative_to(benchmark_root):
+            raise BenchmarkSuiteError("benchmark Git roots must remain inside benchmarks/")
+        agent_case = agent_case.model_copy(update={"repository": repository})
+        validation_case = validation_case.model_copy(update={"repository": repository})
         if golden_patch.is_relative_to(repository):
             raise BenchmarkSuiteError("golden patches must not be inside the Agent repository")
         scripted_raw = _read_yaml_mapping(scripted_path, maximum_bytes=MAX_SCRIPT_BYTES)
@@ -472,7 +474,6 @@ def load_benchmark_suite(
             )
         )
     loaded_tuple = tuple(loaded_cases)
-    runner = process_runner or ProcessRunner(max_output_bytes=MAX_FINGERPRINT_GIT_OUTPUT_BYTES)
     fingerprint = _build_fingerprint(
         suite_path,
         loaded_tuple,

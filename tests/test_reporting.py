@@ -127,7 +127,9 @@ def test_report_serializes_required_fields(tmp_path: Path) -> None:
     assert payload["final_status"] == "RESOLVED"
     assert payload["baseline_test_result"]["outcome"] == "FAIL"
     assert payload["original_repository"] == str(tmp_path / "repo")
-    assert payload["artifacts"]["report"] == str(report_path)
+    assert payload["artifacts"]["report"] == "report.json"
+    assert payload["artifacts"]["trace"] == "trace.jsonl"
+    assert payload["artifact_metadata"]["trace"]["path"] == "trace.jsonl"
 
 
 @pytest.mark.parametrize(

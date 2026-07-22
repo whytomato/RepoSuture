@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import shutil
 from pathlib import Path
 
 import pytest
@@ -10,6 +9,7 @@ import yaml
 from patchpilot.process import ProcessResult, ProcessRunner
 from patchpilot.reporting import FinalStatus, TestOutcome
 from patchpilot.runner import verify_case
+from patchpilot.workspace import ArtifactContainmentError
 
 
 def run_git(runner: ProcessRunner, repository: Path, *arguments: str) -> str:
@@ -117,22 +117,47 @@ def test_unexpected_workflow_exception_cleans_real_worktree_and_reports_failure(
 
 def test_artifacts_inside_original_repository_are_rejected_without_writing_there(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     case_file, repository, _ = create_case(tmp_path)
+    payload = yaml.safe_load(case_file.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["repository"] = str(repository / "src/main")
+    case_file.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
     requested = repository / "artifacts"
-    fallback = tmp_path / "safe-fallback"
-    # tempfile.gettempdir is a process boundary here; redirect it to a test-owned path.
-    monkeypatch.setattr("patchpilot.runner.tempfile.gettempdir", lambda: str(fallback))
     status_before = run_git(ProcessRunner(), repository, "status", "--porcelain=v1")
+    files_before = {
+        path.relative_to(tmp_path) for path in tmp_path.rglob("*") if path.is_file()
+    }
 
-    report = verify_case(case_file, requested)
+    with pytest.raises(
+        ArtifactContainmentError,
+        match="outside the canonical Git repository root",
+    ):
+        verify_case(case_file, requested)
+
+    assert not requested.exists()
+    assert {
+        path.relative_to(tmp_path) for path in tmp_path.rglob("*") if path.is_file()
+    } == files_before
+    assert run_git(ProcessRunner(), repository, "status", "--porcelain=v1") == status_before
+
+
+def test_case_repository_subdirectory_uses_git_root_and_allows_external_artifacts(
+    tmp_path: Path,
+) -> None:
+    case_file, repository, _ = create_case(tmp_path)
+    payload = yaml.safe_load(case_file.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["repository"] = str(repository / "src/main")
+    case_file.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+
+    report = verify_case(
+        case_file,
+        tmp_path / "external-artifacts",
+        process_runner=RaiseOnMavenRunner(),
+    )
 
     assert report.final_status is FinalStatus.INFRASTRUCTURE_ERROR
-    assert report.failure_reason is not None
-    assert "artifacts directory must be outside" in report.failure_reason
-    assert not requested.exists()
+    assert report.original_repository == repository.resolve()
     assert Path(report.artifacts["report"]).is_file()
-    assert Path(report.artifacts["report"]).is_relative_to(fallback.resolve())
-    assert run_git(ProcessRunner(), repository, "status", "--porcelain=v1") == status_before
-    shutil.rmtree(Path(report.artifacts["report"]).parent)
+    assert run_git(ProcessRunner(), repository, "status", "--porcelain=v1") == ""

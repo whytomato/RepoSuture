@@ -20,6 +20,93 @@ class PathSecurityError(ValueError):
     """Raised when a configured path can escape its allowed root."""
 
 
+class WorkspaceError(RuntimeError):
+    """Raised when a Git workspace cannot be safely created or removed."""
+
+
+class OriginalRepositoryChangedError(WorkspaceError):
+    """Raised when the original repository differs after worktree execution."""
+
+
+class ArtifactContainmentError(PathSecurityError):
+    """Raised before output creation when artifacts overlap a source Git repository."""
+
+
+def canonical_git_root(repository: Path, runner: ProcessRunner) -> Path:
+    """Resolve a configured repository directory to Git's canonical worktree root."""
+
+    try:
+        configured = repository.expanduser().resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise WorkspaceError(f"repository is unavailable: {repository}: {exc}") from exc
+    if not configured.is_dir():
+        raise WorkspaceError(f"repository is not a directory: {configured}")
+
+    safe_repository = str(configured).replace("\\", "/")
+    result = runner.run(
+        [
+            "git",
+            "-c",
+            f"safe.directory={safe_repository}",
+            "rev-parse",
+            "--show-toplevel",
+        ],
+        cwd=configured,
+        timeout_seconds=GIT_TIMEOUT_SECONDS,
+    )
+    if result.infrastructure_error is not None:
+        raise WorkspaceError(
+            f"unable to resolve canonical Git root: {result.infrastructure_error}"
+        )
+    if result.timed_out:
+        raise WorkspaceError("timed out while resolving canonical Git root")
+    if result.exit_code != 0:
+        detail = result.stderr.strip() or result.stdout.strip() or "Git returned no detail"
+        raise WorkspaceError(f"unable to resolve canonical Git root: {detail}")
+    if result.stdout_truncated or result.stderr_truncated:
+        raise WorkspaceError("canonical Git root output exceeded the configured limit")
+
+    raw_root = result.stdout.strip()
+    if not raw_root or "\x00" in raw_root:
+        raise WorkspaceError("Git returned an invalid canonical repository root")
+    try:
+        root = Path(raw_root).resolve(strict=True)
+    except (OSError, RuntimeError) as exc:
+        raise WorkspaceError(f"unable to resolve canonical Git root: {exc}") from exc
+    if not root.is_dir() or (
+        configured != root and not configured.is_relative_to(root)
+    ):
+        raise WorkspaceError("configured repository is outside Git's reported top level")
+    return root
+
+
+def validate_artifacts_outside_git_root(
+    repository: Path,
+    artifacts_dir: Path,
+    runner: ProcessRunner,
+) -> Path:
+    """Return the canonical Git root after proving artifacts cannot be created beneath it."""
+
+    root = canonical_git_root(repository, runner)
+    try:
+        lexical = Path(os.path.abspath(artifacts_dir.expanduser()))
+        requested = artifacts_dir.expanduser().resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise ArtifactContainmentError(
+            f"artifacts directory cannot be safely resolved: {artifacts_dir}: {exc}"
+        ) from exc
+    if (
+        lexical == root
+        or lexical.is_relative_to(root)
+        or requested == root
+        or requested.is_relative_to(root)
+    ):
+        raise ArtifactContainmentError(
+            "artifacts directory must be outside the canonical Git repository root"
+        )
+    return root
+
+
 def safe_worktree_path(worktree: Path, relative_path: str | Path) -> Path:
     """Resolve a relative worktree path and reject lexical or symlink escapes."""
 
@@ -50,14 +137,6 @@ def safe_worktree_path(worktree: Path, relative_path: str | Path) -> Path:
     if not resolved_candidate.is_relative_to(resolved_root):
         raise PathSecurityError(f"path escapes the worktree: {relative_path}")
     return resolved_candidate
-
-
-class WorkspaceError(RuntimeError):
-    """Raised when a Git workspace cannot be safely created or removed."""
-
-
-class OriginalRepositoryChangedError(WorkspaceError):
-    """Raised when the original repository differs after worktree execution."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,15 +312,7 @@ class GitWorktree:
         return False
 
     def _validate_repository(self) -> Path:
-        if not self.repository.is_dir():
-            raise WorkspaceError(f"repository is not a directory: {self.repository}")
-        top_level_result = self._git(
-            ["rev-parse", "--show-toplevel"], timeout_seconds=GIT_TIMEOUT_SECONDS
-        )
-        self._require_success(top_level_result, "validate Git repository")
-        if top_level_result.stdout_truncated or top_level_result.stderr_truncated:
-            raise WorkspaceError("Git repository path exceeded the output limit")
-        top_level = Path(top_level_result.stdout.strip()).resolve(strict=True)
+        top_level = canonical_git_root(self.repository, self.runner)
         self.repository = top_level
         commit_result = self._git(
             ["cat-file", "-e", f"{self.base_commit}^{{commit}}"],

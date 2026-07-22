@@ -103,6 +103,11 @@ containment, artifact sizes, and hashes. Replay performs no model request, Git m
 Maven execution, or network request. Text and Markdown replay use the same semantic event
 projection as the live observer.
 
+Per-run reports serialize artifact references relative to the directory containing
+`report.json`. Moving the complete directory therefore preserves replay while size and SHA-256
+remain authoritative. Legacy all-absolute reports are remapped only as one coherent run with
+matching local identity evidence; traversal and symlink/junction escape remain invalid.
+
 ## Why no multi-agent framework is required
 
 The current scope has one decision maker, six local tools, a bounded synchronous loop, and

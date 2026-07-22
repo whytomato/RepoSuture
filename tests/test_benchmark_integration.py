@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -17,7 +18,7 @@ from patchpilot.agent import (
 )
 from patchpilot.benchmark import run_benchmark, validate_benchmark
 from patchpilot.benchmark_reporting import BenchmarkExecutionMode
-from patchpilot.benchmark_spec import LoadedBenchmarkCase
+from patchpilot.benchmark_spec import BenchmarkSuiteError, LoadedBenchmarkCase
 from patchpilot.process import ProcessRunner
 from patchpilot.reporting import FinalStatus, RunReport, TestOutcome
 
@@ -33,9 +34,13 @@ def _require_java(tmp_path: Path) -> None:
 
 
 def _git(*arguments: str) -> str:
+    return _git_at(FIXTURE_REPOSITORY, *arguments)
+
+
+def _git_at(repository: Path, *arguments: str) -> str:
     result = ProcessRunner().run(
         ["git", *arguments],
-        cwd=FIXTURE_REPOSITORY,
+        cwd=repository,
         timeout_seconds=30,
     )
     assert result.succeeded, result.infrastructure_error or result.stderr
@@ -78,6 +83,43 @@ def test_all_six_cases_validate_through_real_maven_and_junit(tmp_path: Path) -> 
     assert all(result.worktree_cleanup_verified for result in summary.results)
     assert _git("rev-parse", "HEAD") == before_head
     assert _git("status", "--porcelain=v1", "--untracked-files=all") == before_status
+
+
+@pytest.mark.integration
+def test_benchmark_entry_points_reject_artifacts_inside_fixture_before_writing(
+    tmp_path: Path,
+) -> None:
+    benchmark_root = tmp_path / "benchmarks"
+    shutil.copytree(
+        PROJECT_ROOT / "benchmarks",
+        benchmark_root,
+        ignore=shutil.ignore_patterns(".git", "target", "__pycache__"),
+    )
+    repository = benchmark_root / "fixtures/null-email-repo"
+    suite = benchmark_root / "suites/mvp.yaml"
+    bootstrap_fixture(repository)
+    before_head = _git_at(repository, "rev-parse", "HEAD")
+    before_status = _git_at(repository, "status", "--porcelain=v1", "--untracked-files=all")
+    validation_artifacts = repository / ".artifacts-boundary-validation"
+    benchmark_artifacts = repository / ".artifacts-boundary-benchmark"
+
+    with pytest.raises(BenchmarkSuiteError, match="outside every fixture repository"):
+        validate_benchmark(suite, validation_artifacts)
+    with pytest.raises(BenchmarkSuiteError, match="outside every fixture repository"):
+        run_benchmark(
+            suite,
+            benchmark_artifacts,
+            provider="scripted",
+            runs_per_case=1,
+        )
+
+    assert not validation_artifacts.exists()
+    assert not benchmark_artifacts.exists()
+    assert _git_at(repository, "rev-parse", "HEAD") == before_head
+    assert (
+        _git_at(repository, "status", "--porcelain=v1", "--untracked-files=all")
+        == before_status
+    )
 
 
 @pytest.mark.integration

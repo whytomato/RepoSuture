@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -9,6 +11,7 @@ import pytest
 from typer.testing import CliRunner
 
 from patchpilot.cli import app
+from patchpilot.process import ProcessRunner
 from patchpilot.reporting import (
     ArtifactMetadata,
     FinalStatus,
@@ -87,6 +90,18 @@ def _completed_run(tmp_path: Path, *, run_id: str = "replay-run") -> Path:
     return run_dir
 
 
+def _directory_link(link: Path, target: Path, *, cwd: Path) -> None:
+    if os.name == "nt":
+        result = ProcessRunner().run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            cwd=cwd,
+            timeout_seconds=10,
+        )
+        assert result.succeeded, result.infrastructure_error or result.stderr
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
 def _rewrite_trace(run_dir: Path, payloads: list[dict[str, object]]) -> None:
     (run_dir / "trace.jsonl").write_text(
         "".join(json.dumps(payload) + "\n" for payload in payloads),
@@ -115,6 +130,94 @@ def test_replay_accepts_run_directory_report_or_trace(
     assert render_replay(replay, view=TrajectoryView.COMPACT, markdown=False) == (
         render_trajectory_text(replay.events, view=TrajectoryView.COMPACT)
     )
+
+
+def test_generated_report_serializes_portable_relative_artifact_references(
+    tmp_path: Path,
+) -> None:
+    run_dir = _completed_run(tmp_path)
+    payload = json.loads((run_dir / "report.json").read_text(encoding="utf-8"))
+
+    assert payload["artifacts"] == {
+        "report": "report.json",
+        "trace": "trace.jsonl",
+    }
+    assert payload["artifact_metadata"]["trace"]["path"] == "trace.jsonl"
+
+
+def test_replay_succeeds_after_complete_run_directory_is_moved(tmp_path: Path) -> None:
+    original_parent = tmp_path / "original"
+    original_parent.mkdir()
+    original = _completed_run(original_parent)
+    moved = tmp_path / "relocated-run"
+
+    shutil.move(str(original), moved)
+
+    replay = load_replay_run(moved)
+    assert replay.run_directory == moved.resolve()
+    assert replay.report.final_status is FinalStatus.MODEL_STOPPED
+    assert replay.events[-1].status == "MODEL_STOPPED"
+
+
+def test_replay_remaps_coherent_legacy_absolute_report_after_move(tmp_path: Path) -> None:
+    original_parent = tmp_path / "legacy-original"
+    original_parent.mkdir()
+    original = _completed_run(original_parent)
+    report_path = original / "report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    for name, configured in list(payload["artifacts"].items()):
+        payload["artifacts"][name] = str((original / configured).resolve())
+    for name, metadata in payload["artifact_metadata"].items():
+        metadata["path"] = payload["artifacts"][name]
+    report_path.write_text(json.dumps(payload), encoding="utf-8")
+    moved = tmp_path / "legacy-relocated"
+    shutil.move(str(original), moved)
+
+    replay = load_replay_run(moved)
+
+    assert replay.run_directory == moved.resolve()
+    assert replay.report.artifacts["trace"] == "trace.jsonl"
+
+
+def test_relocated_replay_rejects_tampered_artifact(tmp_path: Path) -> None:
+    original_parent = tmp_path / "tamper-original"
+    original_parent.mkdir()
+    original = _completed_run(original_parent)
+    moved = tmp_path / "tampered-relocated"
+    shutil.move(str(original), moved)
+    trace_path = moved / "trace.jsonl"
+    trace_text = trace_path.read_text(encoding="utf-8")
+    trace_path.write_text(trace_text.replace("\n", " \n", 1), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="checksum"):
+        load_replay_run(moved)
+
+
+def test_replay_rejects_relative_parent_traversal(tmp_path: Path) -> None:
+    run_dir = _completed_run(tmp_path)
+    report_path = run_dir / "report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    payload["artifacts"]["trace"] = "../trace.jsonl"
+    report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="escapes run directory"):
+        load_replay_run(run_dir)
+
+
+def test_replay_rejects_artifact_symlink_escape(tmp_path: Path) -> None:
+    run_dir = _completed_run(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    shutil.copy2(run_dir / "trace.jsonl", outside / "trace.jsonl")
+    _directory_link(run_dir / "outside-link", outside, cwd=tmp_path)
+    report_path = run_dir / "report.json"
+    payload = json.loads(report_path.read_text(encoding="utf-8"))
+    payload["artifacts"]["trace"] = "outside-link/trace.jsonl"
+    payload["artifact_metadata"]["trace"]["path"] = "outside-link/trace.jsonl"
+    report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="escapes run directory"):
+        load_replay_run(run_dir)
 
 
 def test_replay_cli_requires_no_model_git_maven_or_network(

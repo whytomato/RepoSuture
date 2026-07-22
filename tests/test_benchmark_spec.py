@@ -60,6 +60,31 @@ def test_suite_manifest_loads_six_strictly_linked_cases(
     assert len(suite.fingerprint.value) == 64
 
 
+def test_suite_case_repository_may_point_to_git_subdirectory(
+    copied_benchmarks: Path,
+    tmp_path: Path,
+) -> None:
+    suite_path = _copy_suite(copied_benchmarks, tmp_path)
+    for relative in (
+        "cases/null-input-validation.yaml",
+        "validation/null-input-validation.yaml",
+    ):
+        case_path = suite_path.parent.parent / relative
+        case = _yaml(case_path)
+        case["repository"] = "../fixtures/null-email-repo/src/main"
+        _write_yaml(case_path, case)
+
+    suite = load_benchmark_suite(suite_path)
+    loaded = next(
+        case for case in suite.cases if case.reference.id == "null-input-validation"
+    )
+
+    assert loaded.agent_case.repository == (
+        suite_path.parent.parent / "fixtures/null-email-repo"
+    ).resolve()
+    assert loaded.validation_case.repository == loaded.agent_case.repository
+
+
 def test_duplicate_case_ids_are_rejected(
     copied_benchmarks: Path,
     tmp_path: Path,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import re
@@ -153,7 +154,7 @@ def load_replay_run(path: Path) -> ReplayRun:
         raw_report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise ValueError("report.json is malformed or violates the report schema") from exc
-    _preflight_artifact_paths(run_directory, raw_report)
+    raw_report = _prepare_replay_report_payload(run_directory, raw_report)
     try:
         report = RunReport.model_validate(raw_report)
     except Exception as exc:
@@ -716,24 +717,119 @@ def _referenced_run_file(run_directory: Path, path: Path, *, label: str) -> Path
     return resolved.resolve(strict=True)
 
 
-def _preflight_artifact_paths(run_directory: Path, payload: object) -> None:
+def _prepare_replay_report_payload(
+    run_directory: Path,
+    payload: object,
+) -> object:
+    """Preflight portable paths and safely remap coherent legacy absolute reports."""
+
     if not isinstance(payload, dict):
-        return
+        return payload
     artifacts = payload.get("artifacts")
     if not isinstance(artifacts, dict):
-        return
-    for name, configured in artifacts.items():
-        if not isinstance(name, str) or not isinstance(configured, str):
-            continue
-        configured_path = Path(configured)
+        return payload
+    string_artifacts = {
+        name: Path(configured)
+        for name, configured in artifacts.items()
+        if isinstance(name, str) and isinstance(configured, str)
+    }
+    if len(string_artifacts) != len(artifacts):
+        return payload
+
+    if string_artifacts and all(path.is_absolute() for path in string_artifacts.values()):
+        parents = {path.parent for path in string_artifacts.values()}
+        if len(parents) == 1:
+            return _remap_legacy_absolute_report(
+                run_directory,
+                payload,
+                string_artifacts,
+                parents.pop(),
+            )
+
+    for name, configured_path in string_artifacts.items():
         candidate = (
             configured_path
             if configured_path.is_absolute()
             else run_directory / configured_path
         )
-        resolved = candidate.resolve(strict=False)
+        try:
+            resolved = candidate.resolve(strict=False)
+        except (OSError, RuntimeError) as exc:
+            raise ValueError(f"artifacts[{name!r}] cannot be safely resolved") from exc
         if resolved == run_directory or not resolved.is_relative_to(run_directory):
             raise ValueError(f"artifacts[{name!r}] escapes run directory")
+    return payload
+
+
+def _remap_legacy_absolute_report(
+    run_directory: Path,
+    payload: dict[str, object],
+    artifacts: dict[str, Path],
+    legacy_directory: Path,
+) -> dict[str, object]:
+    """Remap one old all-absolute run only after local identity checks succeed."""
+
+    report_reference = artifacts.get("report")
+    trace_reference = artifacts.get("trace")
+    if (
+        report_reference is None
+        or trace_reference is None
+        or report_reference.name != "report.json"
+        or trace_reference.name != "trace.jsonl"
+    ):
+        raise ValueError("legacy absolute artifact references are not a coherent run")
+
+    metadata = payload.get("artifact_metadata")
+    if not isinstance(metadata, dict):
+        raise ValueError("legacy absolute artifact metadata is unavailable")
+    rewritten = copy.deepcopy(payload)
+    rewritten_artifacts = rewritten.get("artifacts")
+    rewritten_metadata = rewritten.get("artifact_metadata")
+    if not isinstance(rewritten_artifacts, dict) or not isinstance(rewritten_metadata, dict):
+        raise ValueError("legacy absolute artifact metadata is malformed")
+
+    relative_names: set[Path] = set()
+    for name, configured in artifacts.items():
+        try:
+            relative = configured.relative_to(legacy_directory)
+        except ValueError as exc:
+            raise ValueError("legacy absolute artifacts do not share one run directory") from exc
+        if not relative.parts or ".." in relative.parts or relative in relative_names:
+            raise ValueError("legacy absolute artifact references are ambiguous")
+        relative_names.add(relative)
+        candidate = _referenced_run_file(
+            run_directory,
+            relative,
+            label=f"artifacts[{name!r}]",
+        )
+        rewritten_artifacts[name] = relative.as_posix()
+        if name == "report":
+            continue
+
+        raw_metadata = metadata.get(name)
+        if not isinstance(raw_metadata, dict):
+            raise ValueError(f"legacy artifact metadata is missing for {name}")
+        metadata_path = raw_metadata.get("path")
+        expected_size = raw_metadata.get("size_bytes")
+        expected_sha256 = raw_metadata.get("sha256")
+        if (
+            not isinstance(metadata_path, str)
+            or Path(metadata_path) != configured
+            or isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+            or not isinstance(expected_sha256, str)
+            or re.fullmatch(r"[0-9a-f]{64}", expected_sha256) is None
+        ):
+            raise ValueError(f"legacy artifact metadata is inconsistent for {name}")
+        size, digest = _hash_file(candidate)
+        if size != expected_size or digest != expected_sha256:
+            raise ValueError(f"artifact metadata checksum is inconsistent for {name}")
+        rewritten_entry = rewritten_metadata.get(name)
+        if not isinstance(rewritten_entry, dict):
+            raise ValueError(f"legacy artifact metadata is malformed for {name}")
+        rewritten_entry["path"] = relative.as_posix()
+    return rewritten
 
 
 def _hash_file(path: Path) -> tuple[int, str]:

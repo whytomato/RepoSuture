@@ -26,6 +26,7 @@ from patchpilot.trajectory import (
     render_replay,
     write_replay_output,
 )
+from patchpilot.workspace import WorkspaceError
 
 app = typer.Typer(
     name="patchpilot",
@@ -102,7 +103,7 @@ def verify_case_command(
             artifacts_dir,
             keep_worktree=keep_worktree,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, WorkspaceError) as exc:
         typer.echo(f"Infrastructure error before report creation: {exc}", err=True)
         raise typer.Exit(code=EXIT_INFRASTRUCTURE) from exc
 
@@ -189,7 +190,7 @@ def repair_command(
             keep_worktree=keep_worktree,
             trace_observer=observer,
         )
-    except (OSError, ValueError) as exc:
+    except (OSError, ValueError, WorkspaceError) as exc:
         typer.echo(f"Infrastructure error before report creation: {exc}", err=True)
         raise typer.Exit(code=EXIT_INFRASTRUCTURE) from exc
 

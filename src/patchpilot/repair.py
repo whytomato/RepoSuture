@@ -62,7 +62,12 @@ from patchpilot.trajectory import (
     render_trajectory_markdown,
     write_trajectory_markdown,
 )
-from patchpilot.workspace import GitWorktree, RepositorySnapshot, WorkspaceError
+from patchpilot.workspace import (
+    GitWorktree,
+    RepositorySnapshot,
+    WorkspaceError,
+    validate_artifacts_outside_git_root,
+)
 
 RUNNER_MAX_OUTPUT_BYTES = 10 * 1024 * 1024
 MAX_SAFE_MODEL_MESSAGE_CHARS = 65_536
@@ -126,16 +131,16 @@ def repair_case(
         case_error = str(exc)
 
     task_hint = case.id if case is not None else case_file.stem
-    artifact_configuration_error: str | None = None
-    effective_artifacts_dir = artifacts_dir
-    if case is not None and _path_is_inside(artifacts_dir, case.repository):
-        artifact_configuration_error = (
-            "artifacts directory must be outside the original repository; "
-            "a fallback directory was used to avoid modifying it"
+    runner = process_runner or ProcessRunner(max_output_bytes=RUNNER_MAX_OUTPUT_BYTES)
+    if case is not None:
+        repository_root = validate_artifacts_outside_git_root(
+            case.repository,
+            artifacts_dir,
+            runner,
         )
-        effective_artifacts_dir = Path(tempfile.gettempdir()) / "patchpilot-artifacts"
+        case = case.model_copy(update={"repository": repository_root})
 
-    artifacts = create_artifact_paths(effective_artifacts_dir, task_hint, run_id=run_id)
+    artifacts = create_artifact_paths(artifacts_dir, task_hint, run_id=run_id)
     trace = TraceWriter(
         artifacts.trace,
         run_id=artifacts.run_id,
@@ -198,14 +203,6 @@ def repair_case(
         final_status = FinalStatus.INVALID_CASE
         failure_reason = case_error
         trace.emit("case_loaded", status="INVALID", metadata={"error": case_error})
-    elif artifact_configuration_error is not None:
-        final_status = FinalStatus.INFRASTRUCTURE_ERROR
-        failure_reason = artifact_configuration_error
-        trace.emit(
-            "artifact_directory_validated",
-            status="REJECTED",
-            metadata={"error": artifact_configuration_error},
-        )
     else:
         if case is None:
             raise AssertionError("validated Agent Case is unexpectedly unavailable")
@@ -279,7 +276,6 @@ def repair_case(
         and final_status is FinalStatus.INFRASTRUCTURE_ERROR
         and failure_reason == "repair did not start"
     ):
-        runner = process_runner or ProcessRunner(max_output_bytes=RUNNER_MAX_OUTPUT_BYTES)
         maven = MavenRunner(runner)
         patcher = PatchApplier(runner)
         manager = GitWorktree(
@@ -1328,14 +1324,6 @@ def _repository_state(snapshot: RepositorySnapshot | None) -> RepositoryStateRep
         git_status_sha256=snapshot.git_status_sha256,
         git_status_bytes=snapshot.git_status_bytes,
         content_sha256=snapshot.content_sha256,
-    )
-
-
-def _path_is_inside(candidate: Path, root: Path) -> bool:
-    resolved_candidate = candidate.expanduser().resolve(strict=False)
-    resolved_root = root.expanduser().resolve(strict=False)
-    return resolved_candidate == resolved_root or resolved_candidate.is_relative_to(
-        resolved_root
     )
 
 

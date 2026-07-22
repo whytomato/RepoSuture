@@ -1,14 +1,18 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
 
 from patchpilot.process import ProcessResult, ProcessRunner
 from patchpilot.workspace import (
+    ArtifactContainmentError,
     GitWorktree,
     OriginalRepositoryChangedError,
     WorkspaceError,
+    canonical_git_root,
+    validate_artifacts_outside_git_root,
 )
 
 
@@ -34,6 +38,109 @@ def create_repository(tmp_path: Path, runner: ProcessRunner) -> tuple[Path, str]
     run_git(runner, repository, "commit", "--quiet", "-m", "base")
     commit = run_git(runner, repository, "rev-parse", "HEAD")
     return repository, commit
+
+
+def create_directory_link(
+    link: Path,
+    target: Path,
+    *,
+    runner: ProcessRunner,
+    cwd: Path,
+) -> None:
+    if os.name == "nt":
+        result = runner.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            cwd=cwd,
+            timeout_seconds=10,
+        )
+        assert result.succeeded, result.infrastructure_error or result.stderr
+    else:
+        link.symlink_to(target, target_is_directory=True)
+
+
+def test_canonical_git_root_accepts_configured_repository_subdirectory(
+    tmp_path: Path,
+) -> None:
+    runner = ProcessRunner()
+    repository, _ = create_repository(tmp_path, runner)
+    subdirectory = repository / "backend"
+    subdirectory.mkdir()
+
+    assert canonical_git_root(subdirectory, runner) == repository.resolve()
+    assert (
+        validate_artifacts_outside_git_root(
+            subdirectory,
+            tmp_path / "external-artifacts",
+            runner,
+        )
+        == repository.resolve()
+    )
+
+
+@pytest.mark.parametrize("relative", [Path("."), Path("artifacts"), Path("nested/output")])
+def test_artifacts_at_or_beneath_canonical_git_root_are_rejected(
+    tmp_path: Path,
+    relative: Path,
+) -> None:
+    runner = ProcessRunner()
+    repository, _ = create_repository(tmp_path, runner)
+
+    with pytest.raises(ArtifactContainmentError, match="canonical Git repository root"):
+        validate_artifacts_outside_git_root(
+            repository / ".",
+            repository / relative,
+            runner,
+        )
+
+
+def test_artifact_containment_normalizes_parent_segments_and_windows_case(
+    tmp_path: Path,
+) -> None:
+    runner = ProcessRunner()
+    repository, _ = create_repository(tmp_path, runner)
+    if os.name == "nt":
+        requested = Path(str(repository).swapcase()) / "nested" / "artifacts"
+    else:
+        requested = repository / "nested" / ".." / "artifacts"
+
+    with pytest.raises(ArtifactContainmentError):
+        validate_artifacts_outside_git_root(repository, requested, runner)
+
+
+def test_artifact_containment_rejects_lexical_and_resolved_link_escapes(
+    tmp_path: Path,
+) -> None:
+    runner = ProcessRunner()
+    repository, _ = create_repository(tmp_path, runner)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link_to_repository = outside / "repository-link"
+    link_from_repository = repository / "outside-link"
+    create_directory_link(
+        link_to_repository,
+        repository,
+        runner=runner,
+        cwd=tmp_path,
+    )
+    create_directory_link(
+        link_from_repository,
+        outside,
+        runner=runner,
+        cwd=tmp_path,
+    )
+
+    with pytest.raises(ArtifactContainmentError):
+        validate_artifacts_outside_git_root(
+            repository,
+            link_to_repository / "artifacts",
+            runner,
+        )
+    with pytest.raises(ArtifactContainmentError):
+        validate_artifacts_outside_git_root(
+            repository,
+            link_from_repository / "artifacts",
+            runner,
+        )
 
 
 def test_git_worktree_is_created_and_cleaned(tmp_path: Path) -> None:

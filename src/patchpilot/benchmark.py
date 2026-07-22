@@ -37,6 +37,11 @@ from patchpilot.process import ProcessRunner
 from patchpilot.repair import ProgressCallback, repair_case
 from patchpilot.reporting import FinalStatus, RunReport, TestOutcome
 from patchpilot.runner import verify_case
+from patchpilot.workspace import (
+    ArtifactContainmentError,
+    WorkspaceError,
+    validate_artifacts_outside_git_root,
+)
 
 BenchmarkLLMFactory = Callable[[LoadedBenchmarkCase, int], LLMClient]
 
@@ -67,13 +72,21 @@ def _prepare_artifacts_root(root: Path, *, aggregate_names: Sequence[str]) -> Pa
 def _ensure_artifacts_outside_repositories(
     artifacts_root: Path,
     suite: LoadedBenchmarkSuite,
+    runner: ProcessRunner,
 ) -> None:
     for loaded in suite.cases:
-        repository = loaded.agent_case.repository.resolve(strict=True)
-        if artifacts_root == repository or artifacts_root.is_relative_to(repository):
+        try:
+            validate_artifacts_outside_git_root(
+                loaded.agent_case.repository,
+                artifacts_root,
+                runner,
+            )
+        except ArtifactContainmentError as exc:
             raise BenchmarkSuiteError(
                 "benchmark artifacts directory must be outside every fixture repository"
-            )
+            ) from exc
+        except WorkspaceError as exc:
+            raise BenchmarkSuiteError(str(exc)) from exc
 
 
 def _safe_identifier(value: str, maximum: int) -> str:
@@ -263,6 +276,7 @@ def validate_benchmark(
     emit = progress or (lambda _message: None)
     runner = process_runner or ProcessRunner(max_output_bytes=10 * 1024 * 1024)
     suite = load_benchmark_suite(suite_file, process_runner=runner)
+    _ensure_artifacts_outside_repositories(artifacts_dir, suite, runner)
     root = _prepare_artifacts_root(
         artifacts_dir,
         aggregate_names=(
@@ -271,7 +285,6 @@ def validate_benchmark(
             "validation-report.md",
         ),
     )
-    _ensure_artifacts_outside_repositories(root, suite)
     per_case_root = root / "cases"
     per_case_root.mkdir(exist_ok=True)
     emit(f"Suite: {suite.manifest.suite_id}")
@@ -562,6 +575,7 @@ def run_benchmark(
         if provider == "scripted"
         else BenchmarkExecutionMode.LIVE_MODEL
     )
+    _ensure_artifacts_outside_repositories(artifacts_dir, suite, runner)
     root = _prepare_artifacts_root(
         artifacts_dir,
         aggregate_names=(
@@ -570,7 +584,6 @@ def run_benchmark(
             "benchmark-report.md",
         ),
     )
-    _ensure_artifacts_outside_repositories(root, suite)
     run_root = root / "runs"
     run_root.mkdir(exist_ok=True)
     emit(f"Suite: {suite.manifest.suite_id}")

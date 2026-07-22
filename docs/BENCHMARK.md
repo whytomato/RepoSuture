@@ -176,11 +176,15 @@ patchpilot replay-run .artifacts-benchmark-scripted/runs/<run-id>/trace.jsonl `
   --output .artifacts-benchmark-scripted-replay.md --no-color
 ```
 
-Replay validates report/trace schemas, contiguous sequence numbers, run ids, terminal status,
-artifact path containment, sizes, and SHA-256 values. The Markdown replay uses the same event
-projection as live rendering and the generated trajectory. Presentation does not change Agent
-prompts, provider behavior, budgets, benchmark mode, or capability metrics. Scripted and live
-attempts remain separate in aggregate reports.
+New per-run reports store artifact references relative to their run directory, so a complete
+run directory remains replayable after it is copied or moved. Replay validates report/trace
+schemas, contiguous sequence numbers, run ids, terminal status, resolved lexical/link
+containment, sizes, and SHA-256 values. A coherent legacy all-absolute report may be remapped to
+the loaded directory only when its original references agree and local size/hash identity
+checks pass; an arbitrary external absolute path is never trusted. The Markdown replay uses
+the same event projection as live rendering and the generated trajectory. Presentation does
+not change Agent prompts, provider behavior, budgets, benchmark mode, or capability metrics.
+Scripted and live attempts remain separate in aggregate reports.
 
 ## OpenRouter smoke and model Patch ingestion
 

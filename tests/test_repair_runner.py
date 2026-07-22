@@ -11,7 +11,8 @@ from patchpilot.agent import AgentResponse, FakeLLM, ToolCall
 from patchpilot.process import ProcessResult, ProcessRunner
 from patchpilot.repair import repair_case
 from patchpilot.reporting import FinalStatus, TestOutcome
-from patchpilot.trajectory import LiveTrajectoryRenderer, TrajectoryView
+from patchpilot.trajectory import LiveTrajectoryRenderer, TrajectoryView, load_replay_run
+from patchpilot.workspace import ArtifactContainmentError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_CASE = PROJECT_ROOT / "benchmarks/cases/null-email-agent.yaml"
@@ -170,6 +171,31 @@ def _successful_fake() -> FakeLLM:
     )
 
 
+def test_repair_rejects_artifacts_inside_canonical_root_before_writing(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    payload = yaml.safe_load(case_path.read_text(encoding="utf-8"))
+    assert isinstance(payload, dict)
+    payload["repository"] = str(repository / "src/main")
+    case_path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
+    requested = repository / ".artifacts-repair-boundary"
+    original = _git_status(repository)
+
+    with pytest.raises(
+        ArtifactContainmentError,
+        match="outside the canonical Git repository root",
+    ):
+        repair_case(
+            case_path,
+            requested,
+            llm_client=FakeLLM([AgentResponse.finish("must not execute")]),
+        )
+
+    assert not requested.exists()
+    assert _git_status(repository) == original
+
+
 def _patch_call(call_id: str, patch: str) -> AgentResponse:
     return AgentResponse.request_tool(
         ToolCall(
@@ -245,6 +271,28 @@ def test_fake_repair_automatically_runs_real_target_and_regression(
     }.issubset(event_types)
     assert all(event.get("run_id") == report.run_id for event in events)
     assert "sk-test" not in trace_path.read_text(encoding="utf-8")
+
+
+@pytest.mark.integration
+def test_resolved_real_agent_run_replays_after_artifact_directory_move(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    original = _git_status(repository)
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        llm_client=_successful_fake(),
+    )
+    run_directory = Path(report.artifacts["report"]).parent
+    moved = tmp_path / "moved-resolved-run"
+
+    shutil.move(str(run_directory), moved)
+    replay = load_replay_run(moved)
+
+    assert replay.report.final_status is FinalStatus.RESOLVED
+    assert replay.events[-1].status == FinalStatus.RESOLVED.value
+    assert _git_status(repository) == original
 
 
 @pytest.mark.integration

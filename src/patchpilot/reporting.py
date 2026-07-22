@@ -506,16 +506,71 @@ def write_report(report: RunReport, report_path: Path) -> None:
     """Atomically persist a UTF-8 JSON report."""
 
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    portable_report = _portable_report(report, report_path)
     temporary_path = report_path.with_name(f".{report_path.name}.{uuid.uuid4().hex}.tmp")
     try:
         temporary_path.write_text(
-            report.model_dump_json(indent=2) + "\n",
+            portable_report.model_dump_json(indent=2) + "\n",
             encoding="utf-8",
         )
         temporary_path.replace(report_path)
     finally:
         with suppress(OSError):
             temporary_path.unlink(missing_ok=True)
+
+
+def _portable_report(report: RunReport, report_path: Path) -> RunReport:
+    """Serialize artifact references relative to the report's immutable run directory."""
+
+    try:
+        run_directory = report_path.parent.resolve(strict=True)
+        resolved_report_path = report_path.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise OSError(f"unable to resolve report artifact directory: {exc}") from exc
+    if not run_directory.is_dir():
+        raise OSError(f"report artifact directory is not a directory: {run_directory}")
+
+    payload = report.model_dump(mode="python")
+    portable_artifacts: dict[str, str] = {}
+    for name, configured in report.artifacts.items():
+        portable_artifacts[name] = _portable_artifact_reference(
+            run_directory,
+            Path(configured),
+            label=f"artifacts[{name!r}]",
+        )
+    if portable_artifacts.get("report") != resolved_report_path.relative_to(
+        run_directory
+    ).as_posix():
+        raise OSError("report artifact reference does not identify the output report")
+    payload["artifacts"] = portable_artifacts
+
+    portable_metadata: dict[str, dict[str, object]] = {}
+    for name, metadata in report.artifact_metadata.items():
+        metadata_payload = metadata.model_dump(mode="python")
+        metadata_payload["path"] = _portable_artifact_reference(
+            run_directory,
+            metadata.path,
+            label=f"artifact_metadata[{name!r}]",
+        )
+        portable_metadata[name] = metadata_payload
+    payload["artifact_metadata"] = portable_metadata
+    return RunReport.model_validate(payload)
+
+
+def _portable_artifact_reference(
+    run_directory: Path,
+    configured: Path,
+    *,
+    label: str,
+) -> str:
+    candidate = configured if configured.is_absolute() else run_directory / configured
+    try:
+        resolved = candidate.resolve(strict=False)
+    except (OSError, RuntimeError) as exc:
+        raise OSError(f"{label} cannot be safely resolved: {exc}") from exc
+    if resolved == run_directory or not resolved.is_relative_to(run_directory):
+        raise OSError(f"{label} escapes the run directory")
+    return resolved.relative_to(run_directory).as_posix()
 
 
 class TraceWriter:
