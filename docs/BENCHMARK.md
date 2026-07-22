@@ -255,6 +255,12 @@ disabled. It accepts only the first call, excludes later unexecuted output from 
 and records a bounded sequentialization count. Those later calls do not consume tool budget
 or execute against the repository; the provider must decide again after the first observation.
 
+The first clean six-Case live evaluation is published as
+[`results/openrouter-glm-5.2-live-r1.md`](results/openrouter-glm-5.2-live-r1.md) with a small
+machine-readable companion. It reports one attempt per Case as an empirical observation,
+not pass@k or a statistically robust model capability estimate. Raw live artifacts remain
+local and ignored.
+
 ## Correctness oracle and metrics
 
 `RESOLVED` requires observed baseline target failure, an accepted nonempty production

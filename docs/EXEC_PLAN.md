@@ -27,10 +27,10 @@ Last updated: 2026-07-22
   as `d65dfa2`; push only `main` and verify matching local/remote
   `d65dfa26dadaaf791ca93ef50a902bf39a56f084` SHAs. The local `gh` CLI is unavailable, so
   workflow execution could not be watched from this machine.
-- [ ] Load only the documented live variables from the ignored local `.env` without
+- [x] Load only the documented live variables from the ignored local `.env` without
   printing values, then execute the gated null-input, regression-trap, and six-Case live
   evaluations exactly as specified when configuration is valid.
-- [ ] Publish only sanitized genuine live evidence, rerun quality gates, commit it
+- [x] Publish only sanitized genuine live evidence, rerun quality gates, commit it
   separately, and push verified clean `main`.
 
 ### Design decisions
@@ -104,6 +104,33 @@ Last updated: 2026-07-22
   contained zero credential, Authorization, golden, validation-path, or hidden-solution
   matches. Replay of the original failed live run succeeded without provider access and
   accurately ended `MODEL_API_ERROR`.
+- The generic provider compatibility fix was committed and pushed as
+  `944fc6aab83c64848c4eae11f291db80ebc69041`. Post-commit validation again reported
+  **263 passed**, Ruff passed, and mypy passed before the clean live rerun.
+
+### Clean live evidence
+
+- The two-Patch `null-input-validation` smoke completed without provider, protocol, artifact,
+  worktree, or infrastructure failure. Both accepted candidates ran real target tests and
+  failed, then rolled back; the final status was `AGENT_BUDGET_EXHAUSTED`. This is an honest
+  model failure, not a framework failure. It used 5 requests, 5 tools, 2 Patches, and 13,038
+  reported tokens; regression correctly did not run.
+- The gated `quota-regression-trap` smoke resolved in 5 turns, 5 tools, and one Patch. Target
+  and three-test regression both passed. Its second turn exercised the new provider
+  compatibility path: one extra unexecuted call was discarded before the Agent continued.
+- The complete sequential six-Case run then resolved **6/6** attempts with all six baseline
+  failures reproduced and all six target and regression results passing. This is one
+  empirical attempt per Case, not a statistically robust estimate and not pass@k.
+- The suite used 28 model requests with zero API errors, 28 tools, seven Patch attempts, and
+  66,074 reported input-plus-output tokens. Pagination's first Patch was safely rejected as
+  `PATCH_GIT_RECOUNT_FAILED`; structured feedback produced a visible REPLAN and a successful
+  second Patch. Five Cases recorded 13 discarded extra provider calls in total; none executed.
+- All 36 recorded per-run artifact sizes and hashes matched. JSON/CSV identities and trace
+  sequence/run IDs were consistent; skips, worktree leaks, fixture changes, credential hits,
+  Authorization hits, and Agent-visible hidden-solution/reasoning hits were all zero.
+- Sanitized public evidence is in `docs/results/openrouter-glm-5.2-live-r1.md`, its compact
+  JSON companion, and `docs/examples/live-pagination-replan-trajectory.md`. Raw live
+  artifact directories remain ignored and uncommitted.
 
 ## 2026-07-22 Milestone 4B — Agent-first CLI and trajectory replay
 

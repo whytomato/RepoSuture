@@ -31,6 +31,11 @@ JUnit、目标测试、完整回归和仓库完整性检查。模型的文字声
 [`docs/examples/scripted-regression-trap-trajectory.md`](docs/examples/scripted-regression-trap-trajectory.md)，
 运行时职责与边界见 [`docs/AGENT_RUNTIME.md`](docs/AGENT_RUNTIME.md)。
 
+首次 clean live 六 Case 评估及其单次运行限制见
+[`docs/results/openrouter-glm-5.2-live-r1.md`](docs/results/openrouter-glm-5.2-live-r1.md)；
+真实 Patch 拒绝 → REPLAN 示例见
+[`docs/examples/live-pagination-replan-trajectory.md`](docs/examples/live-pagination-replan-trajectory.md)。
+
 ```mermaid
 stateDiagram-v2
     [*] --> Prepare
@@ -86,8 +91,10 @@ patchpilot replay-run .artifacts-live/<run-id> `
 Milestone 4B 已作为 commit
 `7ee8912ca58225f734484c5139103cb763b77e99` 提交并推送；当时完整验证为 **245 passed**，
 确定性 benchmark validation 为 6/6，scripted/offline harness 为 6/6。scripted 结果只证明
-Agent 编排、真实 Git/Maven/JUnit 和反馈循环，不是 live 模型修复率。Milestone 5 开始时尚未完成
-release-hardening 后的 clean live benchmark，因此这里不声明 live resolution rate。
+Agent 编排、真实 Git/Maven/JUnit 和反馈循环，不是 live 模型修复率。Milestone 5 随后在 clean
+commit `944fc6aab83c64848c4eae11f291db80ebc69041` 上完成首次 live 六 Case 评估：单次经验结果为
+6/6 `RESOLVED`。这只是每 Case 一次的观测，不是统计稳健的成功率，也不是 pass@k；完整条件与
+逐 Case 证据见上述结果文档。
 
 本项目没有多 Agent、LangChain、LangGraph、OpenAI Agents SDK、MCP、RAG、向量数据库、
 Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放任意 Shell。
