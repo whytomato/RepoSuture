@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    name: Python 3.11 / Java 17 (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      PYTHONUTF8: "1"
+      PYTHONDONTWRITEBYTECODE: "1"
+
+    steps:
+      - name: Check out full Git history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Set up Temurin Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install PatchPilot development dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Bootstrap deterministic Maven fixture
+        run: python benchmarks/bootstrap_fixture.py
+
+      - name: Run complete pytest suite with real Git, Maven, and JUnit
+        run: python -m pytest -q
+
+      - name: Require deterministic Maven and JUnit smoke evidence
+        run: >-
+          patchpilot verify-case benchmarks/cases/null-email.yaml
+          --artifacts-dir .artifacts-ci-verify
+
+      - name: Run Ruff
+        run: python -m ruff check .
+
+      - name: Run mypy
+        run: python -m mypy src

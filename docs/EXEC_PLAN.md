@@ -2,6 +2,76 @@
 
 Last updated: 2026-07-22
 
+## 2026-07-22 Milestone 5 — release hardening and first clean live evaluation
+
+### Living progress
+
+- [x] Confirm the primary checkout is the clean `main` branch at
+  `7ee8912ca58225f734484c5139103cb763b77e99`, synchronized with the intended
+  `whytomato/PatchPilot` remote, with no Git operation in progress.
+- [x] Audit every deterministic and Agent artifact entry point and reproduce the
+  configured-subdirectory Git-root containment gap before changing code.
+- [x] Resolve Case repositories through Git's canonical top level before any artifact
+  creation; share the same resolved/lexical containment rule across verify, repair,
+  validation, benchmark, and worktree integrity code.
+- [x] Serialize per-run artifact references relative to `report.json`, retain size/SHA-256
+  authority, and safely remap coherent legacy all-absolute reports after relocation.
+- [x] Add regression coverage for repository subdirectories, pre-write rejection, path
+  normalization/case, symlink or junction escape, portable replay, legacy compatibility,
+  relocation, traversal, and tampering.
+- [x] Add Ubuntu/Windows Python 3.11 + Temurin Java 17 CI, an MIT license, a public-safe
+  security reporting policy, and a stable CI badge.
+- [x] Run all quality gates and fresh deterministic/FakeLLM/scripted real Maven/JUnit
+  validations, including moved and tampered regression-trap replay.
+- [ ] Review, selectively commit, push release hardening to `main`, and verify CI plus
+  matching local/remote SHAs.
+- [ ] Load only the documented live variables from the ignored local `.env` without
+  printing values, then execute the gated null-input, regression-trap, and six-Case live
+  evaluations exactly as specified when configuration is valid.
+- [ ] Publish only sanitized genuine live evidence, rerun quality gates, commit it
+  separately, and push verified clean `main`.
+
+### Design decisions
+
+- Artifact containment considers both the normalized lexical path and the fully resolved
+  path, so neither `..`, case variants, a link into the repository, nor a link outward from
+  the repository can bypass the canonical Git-root boundary.
+- A valid Case may configure a directory below the Git top level. Git worktrees,
+  repository snapshots, fixture separation, and artifact boundaries use the canonical
+  top level returned by `git rev-parse --show-toplevel`.
+- New `report.json` files use run-directory-relative artifact references. Replay never
+  trusts an external absolute path; legacy remapping requires one coherent old run root,
+  matching artifact/metadata references, local containment, size, and SHA-256 identity.
+- CI contains no provider credentials and runs real Git/Maven/JUnit through the existing
+  test suite. Scripted results continue to prove harness execution only.
+
+### Starting evidence
+
+- Milestone 4B was committed and pushed as
+  `7ee8912ca58225f734484c5139103cb763b77e99` after **245 passing tests**, Ruff, mypy,
+  deterministic 6/6 validation, and scripted 6/6 repair evidence.
+- At the start of Milestone 5, no clean post-hardening live benchmark or live resolution
+  rate had been completed. The earlier malformed-Patch smoke remains an engineering
+  finding rather than capability evidence.
+
+### Non-live validation evidence
+
+- Final pre-commit `python -m pytest -q`: **262 passed in 365.51s**, with no skips. Ruff reported
+  **All checks passed** and mypy reported **Success: no issues found in 23 source files**.
+- Fresh deterministic `verify-case` and FakeLLM repair both executed real Maven/JUnit and
+  ended `RESOLVED` with baseline FAIL, target PASS, and regression PASS.
+- Fresh `.artifacts-m5-validation` validated **6/6** Cases. Fresh
+  `.artifacts-m5-scripted` resolved **6/6 scripted/offline** attempts; the latter is
+  harness evidence, not live-model capability evidence.
+- The scripted regression trap recorded target PASS, regression FAIL, rollback and
+  explicit REPLAN, then target PASS and regression PASS. Original and relocated replay
+  both succeeded; generated and replayed Markdown shared SHA-256
+  `695b641847ca5599ed8434d58ca8cd6e6a39d140ebb2bdde8eaab6be7adfef2e`.
+- A tampered relocated trajectory was rejected with exit code 2 for a checksum mismatch.
+  Across six scripted reports, 42 artifact references were relative and all 36 recorded
+  artifact size/hash entries matched. Test skips, cleanup failures, unsafe Agent-visible
+  secret/hidden-path matches, and remaining temporary execution worktrees were all zero.
+
 ## 2026-07-22 Milestone 4B — Agent-first CLI and trajectory replay
 
 ### Living progress
@@ -30,8 +100,10 @@ Last updated: 2026-07-22
 - [x] Run the complete pytest, ruff, mypy, deterministic Case, FakeLLM, six-Case validation,
   scripted benchmark, replay comparison, secret/worktree/fixture inspections, and record
   only newly observed results.
-- [ ] Commit the reviewed implementation on clean `main`, rerun post-commit gates, inspect
-  optional live credentials without printing them, and push only verified `main`.
+- [x] Commit the reviewed implementation on clean `main`, rerun post-commit gates, and
+  push only verified `main` as `7ee8912ca58225f734484c5139103cb763b77e99`.
+- [x] Inspect optional live configuration without printing it. Configuration was absent
+  from that clean checkout, so no Milestone 4B live result was fabricated.
 
 ### Design decisions
 
@@ -99,9 +171,9 @@ Last updated: 2026-07-22
   controlled before/after live-smoke method.
 - [x] Run the complete pytest, ruff, mypy, deterministic Case, benchmark validation,
   scripted benchmark, artifact/secret/worktree inspections, and record observed results.
-- [ ] Review and commit only intended files on `codex/milestone3`, confirm a clean tree,
-  then run the same single-Case OpenRouter smoke if genuine configuration is available.
-- [ ] Fast-forward clean `main`, revalidate the actual primary checkout, push only
+- [x] Review and commit only intended files on `codex/milestone3`, confirming a clean tree.
+  No post-change OpenRouter smoke was fabricated when configuration was unavailable.
+- [x] Fast-forward clean `main`, revalidate the actual primary checkout, push only
   `main` to `origin/main`, and verify the remote SHA.
 
 ### Safety and design decisions

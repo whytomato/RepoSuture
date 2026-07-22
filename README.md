@@ -2,6 +2,8 @@
 
 PatchPilot is a test-grounded Software Engineering Agent for autonomous Java/Maven bug repair.
 
+[![CI](https://github.com/whytomato/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/whytomato/PatchPilot/actions/workflows/ci.yml)
+
 它让模型动态选择受限的软件工程工具，同时把正确性完全交给隔离 Git worktree、Maven、
 JUnit、目标测试、完整回归和仓库完整性检查。模型的文字声明永远不能产生 `RESOLVED`。
 
@@ -80,6 +82,12 @@ patchpilot replay-run .artifacts-live/<run-id> `
 - Milestone 3：六 Case Java 17/Maven benchmark、确定性校验、顺序批处理和聚合报告。
 - Milestone 4A：安全 Patch normalization、错误 taxonomy、`--recount` 限定回退和事务回滚。
 - Milestone 4B：基于 canonical trace 的实时 Agent timeline、离线 replay 和 `trajectory.md`。
+
+Milestone 4B 已作为 commit
+`7ee8912ca58225f734484c5139103cb763b77e99` 提交并推送；当时完整验证为 **245 passed**，
+确定性 benchmark validation 为 6/6，scripted/offline harness 为 6/6。scripted 结果只证明
+Agent 编排、真实 Git/Maven/JUnit 和反馈循环，不是 live 模型修复率。Milestone 5 开始时尚未完成
+release-hardening 后的 clean live benchmark，因此这里不声明 live resolution rate。
 
 本项目没有多 Agent、LangChain、LangGraph、OpenAI Agents SDK、MCP、RAG、向量数据库、
 Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放任意 Shell。
@@ -192,8 +200,11 @@ patchpilot replay-run .artifacts-live/<run-id>/report.json `
   --output .artifacts-live-replay.md --no-color
 ```
 
-Replay 会校验 report/trace schema、sequence、run id、终态、工件 containment、大小和 SHA-256；
-输出路径不得位于原 run 目录内，因此不会覆盖原始证据。
+新生成的 `report.json` 使用 run-directory-relative 工件引用，因此完整移动或复制 run 目录后仍可
+replay。Replay 会校验 report/trace schema、sequence、run id、终态、工件 containment、大小和
+SHA-256；旧版全绝对路径报告只有在本地文件名、元数据、大小和哈希共同证明身份时才会安全重映射。
+任意外部绝对路径、`../`、symlink/junction 逃逸仍会被拒绝。输出路径不得位于原 run 目录内，
+因此不会覆盖原始证据。
 
 一次性模型覆盖和预算控制：
 
