@@ -54,6 +54,13 @@ worktree, decide that a test passed, or set `RESOLVED`. Responses API continuati
 provider-independent through `LLMClient`; stateless providers receive the complete required
 conversation on each request.
 
+PatchPilot requests one tool action per model turn. If an OpenAI-compatible endpoint returns
+multiple function calls despite `parallel_tool_calls=false`, the adapter retains the first
+call and the provider output prefix required for it, excludes the unexecuted calls from
+stateless continuation, and records `provider_tool_calls_sequentialized` with only bounded
+counts. The first real observation must return to the model before it can choose another
+action; PatchPilot never silently batch-executes the extra calls.
+
 The environment validates tool schemas, paths, symlink/reparse containment, allowed file
 classes, Patch structure and Git applicability. It executes all subprocesses with argument
 arrays, explicit working directories and timeouts. Tests, build files, Maven Wrapper files,

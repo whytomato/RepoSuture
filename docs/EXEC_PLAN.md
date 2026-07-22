@@ -23,8 +23,10 @@ Last updated: 2026-07-22
   security reporting policy, and a stable CI badge.
 - [x] Run all quality gates and fresh deterministic/FakeLLM/scripted real Maven/JUnit
   validations, including moved and tampered regression-trap replay.
-- [ ] Review, selectively commit, push release hardening to `main`, and verify CI plus
-  matching local/remote SHAs.
+- [x] Review and selectively commit release hardening as `0908e65` and repository policy/CI
+  as `d65dfa2`; push only `main` and verify matching local/remote
+  `d65dfa26dadaaf791ca93ef50a902bf39a56f084` SHAs. The local `gh` CLI is unavailable, so
+  workflow execution could not be watched from this machine.
 - [ ] Load only the documented live variables from the ignored local `.env` without
   printing values, then execute the gated null-input, regression-trap, and six-Case live
   evaluations exactly as specified when configuration is valid.
@@ -44,6 +46,10 @@ Last updated: 2026-07-22
   matching artifact/metadata references, local containment, size, and SHA-256 identity.
 - CI contains no provider credentials and runs real Git/Maven/JUnit through the existing
   test suite. Scripted results continue to prove harness execution only.
+- The provider boundary preserves the one-action Agent contract even when an
+  OpenAI-compatible endpoint violates `parallel_tool_calls=false`: retain the first call,
+  exclude output from the second call onward, record the bounded discarded-call count, and
+  require a fresh model decision after the first real observation.
 
 ### Starting evidence
 
@@ -71,6 +77,33 @@ Last updated: 2026-07-22
   Across six scripted reports, 42 artifact references were relative and all 36 recorded
   artifact size/hash entries matched. Test skips, cleanup failures, unsafe Agent-visible
   secret/hidden-path matches, and remaining temporary execution worktrees were all zero.
+- Post-commit quality gates on clean `main` reported **262 passed in 376.42s**, Ruff
+  **All checks passed**, and mypy **Success: no issues found in 23 source files** before
+  release commits were pushed.
+
+### Live evaluation and framework-fix cycle 1
+
+- The ignored local configuration supplied the documented endpoint and model without
+  printing or persisting credentials. The first clean `null-input-validation` attempt ran
+  from pushed commit `d65dfa26dadaaf791ca93ef50a902bf39a56f084` with `dirty=false`.
+- Baseline Maven/JUnit genuinely failed. The Agent completed three model requests and two
+  `list_files` calls, with zero API errors, before OpenRouter returned more than one function
+  call despite `parallel_tool_calls=false`. The adapter safely stopped with
+  `MODEL_API_ERROR`; no Patch was attempted, candidate test or regression suite ran, or
+  false `RESOLVED` occurred.
+- A focused regression test reproduced the exact adapter failure. The generic compatibility
+  fix retains and executes only the first call, removes later unexecuted calls from stateless
+  continuation, preserves the matching first-call output, and emits a safe sequentialization
+  trace count. The fix does not add parallel tools or relax policy, budgets, worktrees, Git,
+  Maven, JUnit, or correctness authority.
+- Fix-cycle validation reported **263 passed in 367.86s**, Ruff **All checks passed**, and
+  mypy **Success: no issues found in 23 source files**. Fresh deterministic Case and
+  FakeLLM repair runs resolved with real Maven/JUnit; benchmark validation remained **6/6
+  VALID** and the scripted/offline benchmark remained **6/6 RESOLVED**. The fixture was
+  clean, only its primary worktree remained, and 14 Agent-visible trace/trajectory files
+  contained zero credential, Authorization, golden, validation-path, or hidden-solution
+  matches. Replay of the original failed live run succeeded without provider access and
+  accurately ended `MODEL_API_ERROR`.
 
 ## 2026-07-22 Milestone 4B — Agent-first CLI and trajectory replay
 

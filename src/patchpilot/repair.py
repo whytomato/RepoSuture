@@ -439,6 +439,18 @@ def repair_case(
                             final_visible_message = response.message[
                                 :MAX_SAFE_MODEL_MESSAGE_CHARS
                             ]
+                        if response.discarded_tool_call_count:
+                            trace.emit(
+                                "provider_tool_calls_sequentialized",
+                                status="COMPATIBILITY",
+                                metadata={
+                                    "model_turn": model_turns,
+                                    "discarded_tool_calls": (
+                                        response.discarded_tool_call_count
+                                    ),
+                                    "retained_tool_calls": 1,
+                                },
+                            )
                         trace.emit(
                             "model_response_received",
                             status=("INCOMPLETE" if response.incomplete_reason else "OK"),

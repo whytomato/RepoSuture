@@ -116,12 +116,12 @@ class OpenAIResponsesClient:
         raw_response = self._create_with_retries(request)
         latency = max(0.0, time.perf_counter() - started)
         output_items = self._output_items(raw_response)
-        calls = [item for item in output_items if item.get("type") == "function_call"]
-        if len(calls) > 1:
-            raise ModelProtocolError(
-                "Responses API returned multiple function calls despite parallel calls "
-                "being disabled"
-            )
+        retained_output, discarded_tool_calls = _retain_first_function_call(
+            output_items
+        )
+        calls = [
+            item for item in retained_output if item.get("type") == "function_call"
+        ]
 
         response_id = _optional_string(_get_value(raw_response, "id"))
         request_id = _optional_string(_get_value(raw_response, "_request_id"))
@@ -129,14 +129,17 @@ class OpenAIResponsesClient:
         usage = _normalize_usage(_get_value(raw_response, "usage"))
         incomplete_reason = _incomplete_reason(raw_response)
         visible_text, output_truncated = _bounded_utf8(
-            _visible_text(raw_response, output_items),
+            _visible_text(
+                raw_response if discarded_tool_calls == 0 else None,
+                retained_output,
+            ),
             self.config.max_retained_model_output_bytes,
         )
 
         tool_call: ToolCall | None = None
         if calls:
             tool_call = _normalize_tool_call(calls[0])
-        next_input = tuple(copy.deepcopy([*running_input, *output_items]))
+        next_input = tuple(copy.deepcopy([*running_input, *retained_output]))
         pending = (tool_call.call_id,) if tool_call is not None else ()
         normalized_continuation = ProviderContinuation(
             input_items=next_input,
@@ -152,6 +155,7 @@ class OpenAIResponsesClient:
             "incomplete_reason": incomplete_reason,
             "latency_seconds": latency,
             "output_truncated": output_truncated,
+            "discarded_tool_call_count": discarded_tool_calls,
             "continuation": normalized_continuation,
         }
         if tool_call is not None:
@@ -329,6 +333,27 @@ def _normalize_tool_call(item: dict[str, Any]) -> ToolCall:
         )
     except ValidationError as exc:
         raise ModelProtocolError("function_call identifiers are invalid") from exc
+
+
+def _retain_first_function_call(
+    output_items: Sequence[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], int]:
+    """Enforce the runtime's one-action contract at a provider boundary.
+
+    Some OpenAI-compatible providers can return multiple calls even when the
+    request disables parallel calls. The Agent must observe the first result
+    before choosing another action, so output from the second call onward is
+    deliberately excluded from stateless continuation state.
+    """
+
+    call_indexes = [
+        index
+        for index, item in enumerate(output_items)
+        if item.get("type") == "function_call"
+    ]
+    if len(call_indexes) <= 1:
+        return list(output_items), 0
+    return list(output_items[: call_indexes[1]]), len(call_indexes) - 1
 
 
 def _normalize_usage(raw: object) -> ModelUsage:

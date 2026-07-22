@@ -400,7 +400,7 @@ def test_malformed_function_arguments_become_a_structured_tool_error() -> None:
     assert "JSON" in result.error.message
 
 
-def test_missing_call_id_and_unexpected_multiple_calls_are_protocol_errors() -> None:
+def test_missing_call_id_is_a_protocol_error() -> None:
     missing_id = _FakeResponse(
         output=[
             {
@@ -410,24 +410,76 @@ def test_missing_call_id_and_unexpected_multiple_calls_are_protocol_errors() -> 
             }
         ]
     )
+
+    client = OpenAIResponsesClient(config=_config(), sdk_client=_FakeSDK([missing_id]))
+    with pytest.raises(ModelProtocolError):
+        client.chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
+
+
+def test_multiple_function_calls_are_sequentialized_before_continuation() -> None:
     multiple = _FakeResponse(
         output=[
             {
+                "id": f"fc_{index}",
                 "type": "function_call",
                 "call_id": f"call_{index}",
                 "name": "search_code",
-                "arguments": "{}",
+                "arguments": f'{{"query":"term-{index}","path":null}}',
             }
             for index in range(2)
         ]
     )
+    sdk = _FakeSDK(
+        [
+            multiple,
+            _FakeResponse(output=[], output_text="Observed the first result."),
+        ]
+    )
+    client = OpenAIResponsesClient(config=_config(), sdk_client=sdk)
+    user = AgentMessage(role="user", content="Inspect.")
 
-    for candidate in (missing_id, multiple):
-        client = OpenAIResponsesClient(
-            config=_config(), sdk_client=_FakeSDK([candidate])
-        )
-        with pytest.raises(ModelProtocolError):
-            client.chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
+    first = client.chat([user], [_tool_spec()])
+
+    assert first.tool_call == ToolCall(
+        call_id="call_0",
+        name="search_code",
+        arguments={"query": "term-0", "path": None},
+    )
+    assert first.discarded_tool_call_count == 1
+    assert first.continuation is not None
+    retained_calls = [
+        item
+        for item in first.continuation.input_items
+        if item.get("type") == "function_call"
+    ]
+    assert [item["call_id"] for item in retained_calls] == ["call_0"]
+
+    result = ToolResult(
+        call_id="call_0",
+        tool_name="search_code",
+        success=True,
+        output={"matches": []},
+    )
+    second = client.chat(
+        [
+            user,
+            AgentMessage(role="assistant", tool_call=first.tool_call),
+            AgentMessage(role="tool", tool_result=result),
+        ],
+        [_tool_spec()],
+        continuation=first.continuation,
+    )
+
+    next_input = sdk.responses.calls[1]["input"]
+    next_calls = [
+        item for item in next_input if item.get("type") == "function_call"
+    ]
+    next_outputs = [
+        item for item in next_input if item.get("type") == "function_call_output"
+    ]
+    assert [item["call_id"] for item in next_calls] == ["call_0"]
+    assert [item["call_id"] for item in next_outputs] == ["call_0"]
+    assert second.finish_requested is True
 
 
 def test_incomplete_response_reason_is_normalized_explicitly() -> None:

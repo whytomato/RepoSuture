@@ -152,6 +152,7 @@ class AgentResponse(BaseModel):
     ] | None = None
     latency_seconds: float = Field(default=0.0, ge=0.0)
     output_truncated: bool = False
+    discarded_tool_call_count: int = Field(default=0, ge=0)
     continuation: ProviderContinuation | None = None
 
     @model_validator(mode="after")

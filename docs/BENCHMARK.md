@@ -249,6 +249,12 @@ writes hidden reasoning to reports. Patch application is transactional; any post
 failure rolls back and verifies a clean worktree. Rollback failure is terminal
 infrastructure failure and cannot continue or resolve.
 
+The live adapter also enforces the runtime's one-action-per-turn contract when a compatible
+endpoint unexpectedly returns more than one function call despite parallel calls being
+disabled. It accepts only the first call, excludes later unexecuted output from continuation,
+and records a bounded sequentialization count. Those later calls do not consume tool budget
+or execute against the repository; the provider must decide again after the first observation.
+
 ## Correctness oracle and metrics
 
 `RESOLVED` requires observed baseline target failure, an accepted nonempty production

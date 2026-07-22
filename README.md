@@ -138,6 +138,11 @@ Responses 请求使用 `store=False`、`parallel_tool_calls=False`、显式 API 
 非工具项；执行工具后使用完全相同的 `call_id` 追加 `function_call_output`。这些 provider
 续接项只保存在内存，不会把隐藏推理写入 report 或 trace。
 
+若 OpenAI-compatible endpoint 违反 `parallel_tool_calls=False` 并返回多个调用，PatchPilot
+仍保持单动作 Agent 契约：只接受第一个调用，从第二个调用开始截断未执行的 provider 输出，
+记录安全的兼容性计数，并在第一个工具 observation 返回后让模型重新决策。后续调用不会被
+批量执行，也不会绕过工具预算或验证。
+
 模型可见的工具只有：
 
 1. `list_files`：有深度、数量与忽略目录限制的仓库文件列表。
