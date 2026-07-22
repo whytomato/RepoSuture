@@ -132,6 +132,21 @@ Last updated: 2026-07-22
   JSON companion, and `docs/examples/live-pagination-replan-trajectory.md`. Raw live
   artifact directories remain ignored and uncommitted.
 
+### CI follow-up
+
+- GitHub Actions run `29915003314` executed both matrix jobs for published commit
+  `769ff6e`. Windows completed successfully. Ubuntu passed dependency setup, fixture
+  bootstrap, the full pytest suite, explicit Maven/JUnit smoke, and Ruff, then failed only
+  at mypy because Linux typeshed does not expose the Windows-only
+  `subprocess.CREATE_NEW_PROCESS_GROUP` attribute.
+- `python -m mypy --platform linux src` reproduced the exact failure locally. ProcessRunner
+  now obtains that creation flag through a typed safe fallback; Windows retains the real
+  nonzero flag and non-Windows retains its existing `start_new_session=True` behavior.
+- Fix validation reported **263 passed in 369.89s**, Ruff passed, native-platform and Linux-
+  platform mypy both passed, and `tests/test_process.py` passed 7/7. Fresh deterministic Case
+  and FakeLLM runs resolved with real Maven/JUnit; benchmark validation remained **6/6
+  VALID** and scripted/offline benchmark execution remained **6/6 RESOLVED**.
+
 ## 2026-07-22 Milestone 4B — Agent-first CLI and trajectory replay
 
 ### Living progress

@@ -18,6 +18,9 @@ DEFAULT_MAX_OUTPUT_BYTES = 2 * 1024 * 1024
 DEFAULT_MAX_INPUT_BYTES = 10 * 1024 * 1024
 PROCESS_STOP_GRACE_SECONDS = 2.0
 EMPTY_SHA256 = hashlib.sha256(b"").hexdigest()
+CREATE_NEW_PROCESS_GROUP = int(
+    getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -164,7 +167,7 @@ class ProcessRunner:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     shell=False,
-                    creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                    creationflags=CREATE_NEW_PROCESS_GROUP,
                 )
             else:
                 process = subprocess.Popen(
