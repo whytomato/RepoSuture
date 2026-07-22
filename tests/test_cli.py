@@ -68,6 +68,7 @@ def test_repair_missing_model_configuration_fails_before_worktree_with_report(
     )
 
     assert result.exit_code == 4
+    assert "[FINISH]  MODEL_CONFIGURATION_ERROR" in result.stdout
     assert "Final status: MODEL_CONFIGURATION_ERROR" in result.stdout
     reports = list(artifacts.glob("*/report.json"))
     assert len(reports) == 1
@@ -78,6 +79,62 @@ def test_repair_missing_model_configuration_fails_before_worktree_with_report(
     serialized = reports[0].read_text(encoding="utf-8")
     assert "OPENAI_API_KEY" in serialized
     assert "sk-" not in serialized
+
+
+def test_repair_trace_view_off_preserves_final_summary(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PATCHPILOT_MODEL", raising=False)
+    project_root = Path(__file__).resolve().parents[1]
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "repair",
+            str(project_root / "benchmarks/cases/null-email-agent.yaml"),
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+            "--trace-view",
+            "off",
+            "--no-color",
+        ],
+    )
+
+    assert result.exit_code == 4
+    assert "[FINISH]" not in result.stdout
+    assert "Final status: MODEL_CONFIGURATION_ERROR" in result.stdout
+
+
+def test_trajectory_commit_failure_cannot_return_success(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("PATCHPILOT_MODEL", raising=False)
+    project_root = Path(__file__).resolve().parents[1]
+
+    def fail_trajectory_commit(path: Path, content: str) -> None:
+        del path, content
+        raise OSError("deliberate trajectory commit failure")
+
+    monkeypatch.setattr(
+        "patchpilot.repair.write_trajectory_markdown",
+        fail_trajectory_commit,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        [
+            "repair",
+            str(project_root / "benchmarks/cases/null-email-agent.yaml"),
+            "--artifacts-dir",
+            str(tmp_path / "artifacts"),
+        ],
+    )
+
+    assert result.exit_code == 3
+    assert "deliberate trajectory commit failure" in result.stderr
+    assert list((tmp_path / "artifacts").glob("*/report.json")) == []
 
 
 def test_validate_benchmark_missing_suite_exits_nonzero(tmp_path: Path) -> None:

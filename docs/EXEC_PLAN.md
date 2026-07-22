@@ -1,6 +1,78 @@
 # PatchPilot Execution Record
 
-Last updated: 2026-07-21
+Last updated: 2026-07-22
+
+## 2026-07-22 Milestone 4B — Agent-first CLI and trajectory replay
+
+### Living progress
+
+- [x] Re-read repository rules and Milestones 1–4A documentation; inspect the existing
+  Agent loop, sanitized trace, reporting, CLI, benchmark orchestration, and the real
+  scripted regression-trap trace before editing.
+- [x] Add a typed sanitized trace event and optional observer which receives exactly the
+  durable event; observer exceptions disable presentation without changing execution.
+- [x] Project canonical events into PREPARE, OBSERVE, DECIDE, ACT, VERIFY, REPLAN, and
+  FINISH without exposing or reconstructing hidden reasoning.
+- [x] Emit explicit feedback-driven `agent_replan_requested` events for Patch rejection,
+  target failure, regression failure, and candidate rollback only when another model
+  request follows.
+- [x] Add compact/verbose/off live `repair` timeline controls and deterministic
+  `--no-color` output without changing prompts, tools, budgets, or exit codes.
+- [x] Generate `trajectory.md` plus size/SHA-256 metadata for successful and failed Agent
+  runs; derive it from `trace.jsonl` and reference rather than embed `final.patch`.
+- [x] Add offline `replay-run` for run directories, reports, and traces with strict schema,
+  sequence, run-id, terminal-status, containment, size, and checksum checks.
+- [x] Add unit and real Maven/JUnit integration coverage for rendering, replanning,
+  observer isolation, artifact generation, replay failures, secrets, and regression-trap
+  feedback.
+- [x] Generate and review the committed sanitized regression-trap demonstration from a
+  fresh real scripted benchmark run.
+- [x] Run the complete pytest, ruff, mypy, deterministic Case, FakeLLM, six-Case validation,
+  scripted benchmark, replay comparison, secret/worktree/fixture inspections, and record
+  only newly observed results.
+- [ ] Commit the reviewed implementation on clean `main`, rerun post-commit gates, inspect
+  optional live credentials without printing them, and push only verified `main`.
+
+### Design decisions
+
+- `trace.jsonl` remains the sole Agent-history authority. Live text, offline replay, and
+  Markdown use one deterministic projection; they do not form a second orchestration
+  state machine.
+- Renderers receive only sanitized events after durable append. No renderer can stop a
+  model request, tool, Patch transaction, verification, cleanup, or report outcome.
+- REPLAN is public control-flow evidence, not a claim about model reasoning. It states
+  that structured rejection/test/rollback feedback was returned before a later request.
+- Replay is read-only and provider-free. It rejects any referenced artifact outside the
+  run directory and any report/trace ordering, identity, status, size, or hash mismatch.
+- `trajectory.md` contains the public Case goal, safe timeline, deterministic evidence,
+  counters, token/timing telemetry, and final verifier-owned status. Raw Patches, source
+  bodies, Maven logs, credentials, golden validation inputs, and hidden reasoning stay out.
+- The scripted regression trap demonstrates the harness and feedback loop only; it is not
+  live-model reasoning or a resolution-rate result.
+
+### Observed evidence so far
+
+- Renderer/reporting/replay/CLI focused suite: **61 passed** after the final safety and
+  telemetry refinements.
+- Real regression-trap TDD slice: target PASS, regression FAIL, candidate rollback,
+  explicit REPLAN, second target PASS, second regression PASS, final `RESOLVED`.
+- Real malformed-Patch recovery slice: structured `PATCH_GIT_HEADER_MISSING` feedback,
+  explicit REPLAN, corrected Patch, target PASS, regression PASS, final `RESOLVED`.
+- Final pre-commit `python -m pytest -q`: **245 passed in 359.47s**, with no skips.
+- Final pre-commit `python -m ruff check .`: **All checks passed**.
+- Final pre-commit `python -m mypy src`: **Success: no issues found in 23 source files**.
+- Fresh final `verify-case` and FakeLLM commands both executed real Maven/JUnit and ended
+  `RESOLVED` with baseline FAIL, target PASS, and regression PASS.
+- Fresh `.artifacts-m4b-validation-final` validated **6/6** Cases; fresh
+  `.artifacts-m4b-scripted-final` resolved **6/6 scripted/offline** attempts. These are
+  harness results, not live-model capability data.
+- Verbose replay exposed the regression-trap rollback and REPLAN cycle. Exported Markdown
+  and generated `trajectory.md` had identical SHA-256
+  `436444dc8099bba4ff603dcdafad1fd4fc3a8172dda803c71b4cb80c4ea75257`.
+- All seven final Agent reports contained hashed trajectory metadata with zero mismatches.
+  Fourteen Agent-visible trace/trajectory files had zero matches for secrets, raw Patches,
+  source bodies, golden/hidden paths, or chain-of-thought. Fixture status was clean and
+  temporary execution worktree children were zero.
 
 ## 2026-07-21 Milestone 4A — robust model Patch ingestion
 

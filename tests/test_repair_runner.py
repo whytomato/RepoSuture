@@ -11,6 +11,7 @@ from patchpilot.agent import AgentResponse, FakeLLM, ToolCall
 from patchpilot.process import ProcessResult, ProcessRunner
 from patchpilot.repair import repair_case
 from patchpilot.reporting import FinalStatus, TestOutcome
+from patchpilot.trajectory import LiveTrajectoryRenderer, TrajectoryView
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_CASE = PROJECT_ROOT / "benchmarks/cases/null-email-agent.yaml"
@@ -59,6 +60,24 @@ TEST_MODIFYING_PATCH = f"""diff --git a/{TEST_PATH} b/{TEST_PATH}
  
      @Test
 """
+
+
+def test_trace_renderer_failure_does_not_change_agent_status(tmp_path: Path) -> None:
+    case_path = tmp_path / "invalid-agent.yaml"
+    case_path.write_text("schema_version: 999\n", encoding="utf-8")
+
+    def fail_renderer(_event: object) -> None:
+        raise RuntimeError("presentation only")
+
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        trace_observer=fail_renderer,
+    )
+
+    assert report.final_status is FinalStatus.INVALID_CASE
+    assert report.presentation_warning is not None
+    assert "presentation only" in report.presentation_warning
 
 TRAVERSAL_PATCH = """diff --git a/../../outside.txt b/../../outside.txt
 new file mode 100644
@@ -285,7 +304,16 @@ def test_regression_failure_allows_second_complete_patch_to_resolve(
         ]
     )
 
-    report = repair_case(case_path, tmp_path / "artifacts", llm_client=fake)
+    rendered_chunks: list[str] = []
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        llm_client=fake,
+        trace_observer=LiveTrajectoryRenderer(
+            view=TrajectoryView.VERBOSE,
+            sink=rendered_chunks.append,
+        ),
+    )
 
     assert report.final_status is FinalStatus.RESOLVED
     assert report.total_patch_attempts == 2
@@ -296,6 +324,32 @@ def test_regression_failure_allows_second_complete_patch_to_resolve(
     )
     assert '"outcome": "FAIL"' in regression_log
     assert '"outcome": "PASS"' in regression_log
+    trajectory_path = Path(report.artifacts["trajectory"])
+    trajectory = trajectory_path.read_text(encoding="utf-8")
+    assert report.artifact_metadata["trajectory"].path == trajectory_path
+    assert "# Agent Trajectory" in trajectory
+    assert "ACT" in trajectory
+    assert "OBSERVE" in trajectory
+    assert "VERIFY" in trajectory
+    assert "REPLAN" in trajectory
+    assert "REGRESSION_FAILED" in trajectory
+    assert "CANDIDATE_REVERTED" in trajectory
+    assert "RESOLVED" in trajectory
+    assert "diff --git" not in trajectory
+    live_output = "".join(rendered_chunks)
+    for label in ("ACTION", "OBSERVE", "VERIFY", "REPLAN", "RESOLVED"):
+        assert label in live_output
+    trace_events = [
+        json.loads(line)
+        for line in Path(report.artifacts["trace"]).read_text(encoding="utf-8").splitlines()
+    ]
+    replan = next(
+        event for event in trace_events if event["event_type"] == "agent_replan_requested"
+    )
+    assert replan["metadata"]["reasons"] == [
+        "REGRESSION_FAILED",
+        "CANDIDATE_REVERTED",
+    ]
     assert _git_status(repository)[1] == ""
 
 
@@ -380,6 +434,9 @@ def test_repeated_equivalent_patch_exhausts_patch_budget(tmp_path: Path) -> None
     assert report.total_patch_attempts == 2
     assert report.target_test_execution_count == 2
     assert fake.chat_count == 2
+    trajectory = Path(report.artifacts["trajectory"]).read_text(encoding="utf-8")
+    assert "**AGENT_BUDGET_EXHAUSTED**" in trajectory
+    assert "diff --git" not in trajectory
     trace = Path(report.artifacts["trace"]).read_text(encoding="utf-8")
     assert '"equivalent": true' in trace
     assert _git_status(repository)[1] == ""
@@ -473,10 +530,20 @@ def test_missing_git_header_rejection_then_corrected_patch_resolves_with_real_ma
         for index, event in enumerate(trace_events[first_rejection + 1 :], first_rejection + 1)
         if event["event_type"] == "patch_attempted"
     )
+    replan = next(
+        event
+        for event in trace_events[first_rejection + 1 : next_patch]
+        if event["event_type"] == "agent_replan_requested"
+    )
+    assert replan["metadata"]["reasons"] == ["PATCH_REJECTED"]
+    assert replan["metadata"]["error_code"] == "PATCH_GIT_HEADER_MISSING"
     assert not any(
         event["event_type"] in {"target_test_completed", "regression_test_completed"}
         for event in trace_events[first_rejection + 1 : next_patch]
     )
+    trajectory = Path(report.artifacts["trajectory"]).read_text(encoding="utf-8")
+    assert "PATCH_GIT_HEADER_MISSING" in trajectory
+    assert "REPLAN" in trajectory
     assert _git_status(repository)[1] == ""
 
 
@@ -608,4 +675,6 @@ def test_repair_model_and_tool_budgets_terminate_predictably(
     assert report.total_tool_calls == expected_tools
     assert report.failure_reason is not None
     assert "maximum" in report.failure_reason
+    trajectory = Path(report.artifacts["trajectory"]).read_text(encoding="utf-8")
+    assert "**AGENT_BUDGET_EXHAUSTED**" in trajectory
     assert _git_status(repository)[1] == ""

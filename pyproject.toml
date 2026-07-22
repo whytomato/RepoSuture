@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "patchpilot"
 version = "0.1.0"
-description = "Deterministic test-driven patch verification for Java Maven projects"
+description = "A test-grounded software engineering agent for autonomous Java/Maven bug repair"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -149,10 +149,38 @@ The aggregate artifacts are:
 - `benchmark-summary.json` — complete structured aggregate plus every run record;
 - `benchmark-runs.csv` — one consistent tabular row per attempt;
 - `benchmark-report.md` — deterministic metrics and failure-analysis tables;
-- `runs/<deterministic-id>/` — per-run report, trace, final Patch, and Maven logs.
+- `runs/<deterministic-id>/` — per-run report, canonical trace, safe `trajectory.md`, final
+  Patch, and Maven logs.
 
 Artifact roots are never overwritten when aggregate files already exist. Choose a new
 directory for a new run so prior evidence remains reproducible.
+
+## Agent trajectory and replay
+
+Each scripted or live Agent attempt derives `trajectory.md` from its sanitized
+`trace.jsonl`; no second orchestration history is maintained. The document records the public
+goal, PREPARE/OBSERVE/DECIDE/ACT/VERIFY/REPLAN/FINISH timeline, deterministic verification,
+budgets, counters, timing, and final status. It never embeds the raw Patch, source-file
+contents, complete Maven logs, credentials, hidden reasoning, golden Patch data, or hidden
+validation metadata. A successful trajectory names `final.patch` and records its SHA-256.
+
+Replay one successful or failed benchmark attempt without a provider, network, Git mutation,
+or Maven execution:
+
+```powershell
+patchpilot replay-run .artifacts-benchmark-scripted/runs/<run-id> `
+  --view verbose --format text --no-color
+
+patchpilot replay-run .artifacts-benchmark-scripted/runs/<run-id>/trace.jsonl `
+  --view verbose --format markdown `
+  --output .artifacts-benchmark-scripted-replay.md --no-color
+```
+
+Replay validates report/trace schemas, contiguous sequence numbers, run ids, terminal status,
+artifact path containment, sizes, and SHA-256 values. The Markdown replay uses the same event
+projection as live rendering and the generated trajectory. Presentation does not change Agent
+prompts, provider behavior, budgets, benchmark mode, or capability metrics. Scripted and live
+attempts remain separate in aggregate reports.
 
 ## OpenRouter smoke and model Patch ingestion
 

@@ -11,6 +11,7 @@ from pydantic import ValidationError
 from patchpilot.reporting import (
     FinalStatus,
     RunReport,
+    SanitizedTraceEvent,
     TestOutcome,
     TestResultReport,
     TraceWriter,
@@ -292,6 +293,81 @@ def test_trace_writer_redacts_sensitive_metadata_keys(tmp_path: Path) -> None:
     assert payload["metadata"]["environment"] == "<redacted>"
 
 
+def test_trace_observer_receives_the_exact_sanitized_event_written_to_disk(
+    tmp_path: Path,
+) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    observed: list[SanitizedTraceEvent] = []
+    trace = TraceWriter(trace_path, run_id="observer-run", observer=observed.append)
+
+    trace.emit(
+        "tool_call_requested",
+        status="REQUESTED",
+        metadata={"tool_name": "search_code", "api_token": "must-not-appear"},
+    )
+
+    written = SanitizedTraceEvent.model_validate_json(
+        trace_path.read_text(encoding="utf-8")
+    )
+    assert observed == [written]
+    assert observed[0].metadata["api_token"] == "<redacted>"
+
+
+def test_trace_observer_failure_is_disabled_without_interrupting_trace(
+    tmp_path: Path,
+) -> None:
+    calls = 0
+
+    def fail_presentation(_event: SanitizedTraceEvent) -> None:
+        nonlocal calls
+        calls += 1
+        raise RuntimeError(
+            "renderer failed Authorization: Bearer sk-or-v1-secretmaterial"
+        )
+
+    trace_path = tmp_path / "trace.jsonl"
+    trace = TraceWriter(trace_path, run_id="observer-run", observer=fail_presentation)
+
+    trace.emit("run_started", status="STARTED")
+    trace.emit("run_finished", status="RESOLVED")
+
+    events = [
+        SanitizedTraceEvent.model_validate_json(line)
+        for line in trace_path.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [event.sequence for event in events] == [1, 2]
+    assert events[-1].status == "RESOLVED"
+    assert calls == 1
+    assert trace.observer is None
+    assert trace.observer_warning is not None
+    assert "renderer failed" in trace.observer_warning
+    assert "secretmaterial" not in trace.observer_warning
+    assert "Authorization: Bearer" not in trace.observer_warning
+
+
+def test_trace_writer_redacts_credential_shapes_inside_safe_string_values(
+    tmp_path: Path,
+) -> None:
+    trace_path = tmp_path / "trace.jsonl"
+    trace = TraceWriter(trace_path, run_id="credential-shape-run")
+
+    trace.emit(
+        "presentation_warning",
+        status="WARNING",
+        metadata={
+            "detail": (
+                "Authorization: Bearer sk-or-v1-"
+                + "credentialmaterialthatmustnotappear"
+            )
+        },
+    )
+
+    serialized = trace_path.read_text(encoding="utf-8")
+    assert "credentialmaterialthatmustnotappear" not in serialized
+    assert "Authorization: Bearer" not in serialized
+    assert "<redacted>" in serialized
+
+
 def test_atomic_report_failure_leaves_no_temporary_json(
     tmp_path: Path,
 ) -> None:
@@ -400,6 +476,22 @@ def test_collect_artifact_metadata_matches_disk_and_truncation(tmp_path: Path) -
         assert record.size_bytes == len(content)
         assert record.sha256 == hashlib.sha256(content).hexdigest()
     assert records["baseline_target_test_log"].output_truncated is True
+
+
+def test_agent_trajectory_is_opt_in_and_hashed_as_artifact(tmp_path: Path) -> None:
+    artifacts = create_artifact_paths(tmp_path / "artifacts", "agent-case")
+    artifacts.trace.write_text("", encoding="utf-8")
+    artifacts.trajectory.write_bytes(b"# Agent Trajectory\n")
+
+    records = collect_artifact_metadata(artifacts, include_trajectory=True)
+    mapping = artifacts.as_report_mapping(include_trajectory=True)
+
+    assert mapping["trajectory"] == str(artifacts.trajectory)
+    assert records["trajectory"].size_bytes == len(b"# Agent Trajectory\n")
+    assert records["trajectory"].sha256 == hashlib.sha256(
+        b"# Agent Trajectory\n"
+    ).hexdigest()
+    assert "trajectory" not in artifacts.as_report_mapping()
 
 
 def test_artifact_run_directories_never_overwrite_existing_run(tmp_path: Path) -> None:

@@ -49,12 +49,18 @@ from patchpilot.reporting import (
     PatchAttemptReport,
     RepositoryStateReport,
     RunReport,
+    SanitizedTraceEvent,
     TestOutcome,
     TestResultReport,
     TraceWriter,
     collect_artifact_metadata,
     create_artifact_paths,
     write_report,
+)
+from patchpilot.trajectory import (
+    load_trace_events,
+    render_trajectory_markdown,
+    write_trajectory_markdown,
 )
 from patchpilot.workspace import GitWorktree, RepositorySnapshot, WorkspaceError
 
@@ -84,6 +90,7 @@ Stop when no evidence-based next step remains.
 """
 
 ProgressCallback = Callable[[str], None]
+TraceObserver = Callable[[SanitizedTraceEvent], None]
 
 
 def repair_case(
@@ -103,6 +110,7 @@ def repair_case(
     injected_model: str | None = None,
     process_runner: ProcessRunner | None = None,
     progress: ProgressCallback | None = None,
+    trace_observer: TraceObserver | None = None,
     run_id: str | None = None,
 ) -> RunReport:
     """Run one bounded repair and persist deterministic evidence for every outcome."""
@@ -128,7 +136,11 @@ def repair_case(
         effective_artifacts_dir = Path(tempfile.gettempdir()) / "patchpilot-artifacts"
 
     artifacts = create_artifact_paths(effective_artifacts_dir, task_hint, run_id=run_id)
-    trace = TraceWriter(artifacts.trace, run_id=artifacts.run_id)
+    trace = TraceWriter(
+        artifacts.trace,
+        run_id=artifacts.run_id,
+        observer=trace_observer,
+    )
     trace.emit(
         "run_started",
         status="STARTED",
@@ -326,6 +338,18 @@ def repair_case(
                     failure_reason = "baseline did not prove the configured target test failed"
                 else:
                     emit_progress("Baseline failure reproduced")
+                    trace.emit(
+                        "agent_execution_started",
+                        status="STARTED",
+                        metadata={
+                            "max_model_turns": turn_limit,
+                            "max_tool_calls": tool_limit,
+                            "max_patch_attempts": patch_limit,
+                            "max_target_test_executions": target_limit,
+                            "max_regression_executions": regression_limit,
+                            "max_wall_clock_seconds": wall_limit,
+                        },
+                    )
                     environment = PatchPilotToolEnvironment(
                         worktree=worktree,
                         target_test=case.target_test,
@@ -343,6 +367,7 @@ def repair_case(
                     ]
                     continuation: ProviderContinuation | None = None
                     last_tool_error: ToolErrorCode | PatchErrorCode | None = None
+                    pending_replan: dict[str, object] | None = None
 
                     while True:
                         elapsed = time.monotonic() - started_monotonic
@@ -357,6 +382,17 @@ def repair_case(
                             trace.emit("budget_exhausted", status="MODEL_TURNS")
                             break
 
+                        if pending_replan is not None:
+                            trace.emit(
+                                "agent_replan_requested",
+                                status="FEEDBACK_RETURNED",
+                                metadata={
+                                    **pending_replan,
+                                    "next_model_turn": model_turns + 1,
+                                },
+                            )
+                            pending_replan = None
+
                         model_turns += 1
                         emit_progress(f"Model turn {model_turns}")
                         trace.emit(
@@ -365,6 +401,11 @@ def repair_case(
                             metadata={
                                 "model_turn": model_turns,
                                 "model": model_name,
+                                "max_model_turns": turn_limit,
+                                "tool_calls": tool_calls,
+                                "max_tool_calls": tool_limit,
+                                "patch_attempts": len(environment.patch_attempts),
+                                "max_patch_attempts": patch_limit,
                             },
                         )
                         request_started = time.monotonic()
@@ -484,9 +525,16 @@ def repair_case(
                                 "model_turn": model_turns,
                                 "tool_name": call.name,
                                 "arguments": _safe_tool_arguments(call),
+                                "tool_call_number": tool_calls,
+                                "max_tool_calls": tool_limit,
+                                "patch_attempts_remaining": max(
+                                    0,
+                                    patch_limit - len(environment.patch_attempts),
+                                ),
                             },
                         )
                         patch_attempts_before = len(environment.patch_attempts)
+                        tool_started_monotonic = time.monotonic()
                         result = executor.execute(call)
                         if (
                             call.name == "apply_patch"
@@ -524,6 +572,10 @@ def repair_case(
                                 status="ACCEPTED" if attempt.accepted else "REJECTED",
                                 metadata={
                                     "patch_attempt_id": attempt.attempt_id,
+                                    "model_turn": model_turns,
+                                    "patch_attempts_remaining": max(
+                                        0, patch_limit - attempt.attempt_id
+                                    ),
                                     "patch_sha256": attempt.patch_sha256,
                                     "patch_size": attempt.patch_size,
                                     "affected_files": list(attempt.affected_files),
@@ -559,6 +611,16 @@ def repair_case(
                                     "policy_diagnostic": attempt.policy_diagnostic,
                                 },
                             )
+                            if not attempt.accepted:
+                                pending_replan = {
+                                    "reasons": ["PATCH_REJECTED"],
+                                    "patch_attempt_id": attempt.attempt_id,
+                                    "error_code": (
+                                        attempt.error_code.value
+                                        if attempt.error_code is not None
+                                        else None
+                                    ),
+                                }
 
                             if result.output and result.output.get("terminal") is True:
                                 messages.append(
@@ -567,9 +629,15 @@ def repair_case(
                                 trace.emit(
                                     "tool_execution_completed",
                                     status="FAILED",
+                                    duration=max(
+                                        0.0,
+                                        time.monotonic() - tool_started_monotonic,
+                                    ),
                                     metadata={
                                         "tool_name": call.name,
+                                        "model_turn": model_turns,
                                         "truncated": _result_truncated(result),
+                                        "observation": _safe_tool_observation(result),
                                     },
                                 )
                                 final_status = FinalStatus.INFRASTRUCTURE_ERROR
@@ -628,9 +696,15 @@ def repair_case(
                                 trace.emit(
                                     "tool_execution_completed",
                                     status="OK",
+                                    duration=max(
+                                        0.0,
+                                        time.monotonic() - tool_started_monotonic,
+                                    ),
                                     metadata={
                                         "tool_name": call.name,
+                                        "model_turn": model_turns,
                                         "truncated": _result_truncated(result),
+                                        "observation": _safe_tool_observation(result),
                                     },
                                 )
                                 break
@@ -683,6 +757,13 @@ def repair_case(
                             elif patched_target.outcome is TestOutcome.FAIL:
                                 _rollback_candidate(environment, patcher, inspection)
                                 patch_applied = False
+                                pending_replan = {
+                                    "reasons": [
+                                        "TARGET_TEST_FAILED",
+                                        "CANDIDATE_REVERTED",
+                                    ],
+                                    "patch_attempt_id": len(environment.patch_attempts),
+                                }
                                 result = _with_verification_observation(
                                     result,
                                     target=patched_target,
@@ -769,6 +850,15 @@ def repair_case(
                                             environment, patcher, inspection
                                         )
                                         patch_applied = False
+                                        pending_replan = {
+                                            "reasons": [
+                                                "REGRESSION_FAILED",
+                                                "CANDIDATE_REVERTED",
+                                            ],
+                                            "patch_attempt_id": len(
+                                                environment.patch_attempts
+                                            ),
+                                        }
                                         result = _with_verification_observation(
                                             result,
                                             target=patched_target,
@@ -781,9 +871,15 @@ def repair_case(
                                 trace.emit(
                                     "tool_execution_completed",
                                     status="OK" if result.success else "FAILED",
+                                    duration=max(
+                                        0.0,
+                                        time.monotonic() - tool_started_monotonic,
+                                    ),
                                     metadata={
                                         "tool_name": call.name,
+                                        "model_turn": model_turns,
                                         "truncated": _result_truncated(result),
+                                        "observation": _safe_tool_observation(result),
                                     },
                                 )
                                 break
@@ -792,9 +888,15 @@ def repair_case(
                         trace.emit(
                             "tool_execution_completed",
                             status="OK" if result.success else "FAILED",
+                            duration=max(
+                                0.0,
+                                time.monotonic() - tool_started_monotonic,
+                            ),
                             metadata={
                                 "tool_name": call.name,
+                                "model_turn": model_turns,
                                 "truncated": _result_truncated(result),
+                                "observation": _safe_tool_observation(result),
                             },
                         )
                         emit_progress(
@@ -861,6 +963,20 @@ def repair_case(
             metadata={"failure_reason": failure_reason},
         )
     total_duration = max(0.0, time.monotonic() - started_monotonic)
+    trace.emit(
+        "agent_finished",
+        status=final_status.value,
+        duration=total_duration,
+        metadata={
+            "model_turns": model_turns,
+            "tool_calls": tool_calls,
+            "patch_attempts": len(environment.patch_attempts) if environment else 0,
+            "target_test_executions": target_executions,
+            "regression_executions": regression_executions,
+            "duration_seconds": total_duration,
+            "failure_reason": failure_reason,
+        },
+    )
     trace.emit(
         "run_finished",
         status=final_status.value,
@@ -958,6 +1074,8 @@ def repair_case(
         workflow="agent_repair",
         provider=provider,
         model=model_name,
+        issue_title=case.issue_title if case is not None else None,
+        issue_description=case.issue_description if case is not None else None,
         total_model_turns=model_turns,
         total_tool_calls=tool_calls,
         tool_calls_by_name=dict(sorted(tool_counts.items())),
@@ -974,7 +1092,31 @@ def repair_case(
         model_latency_seconds=model_latency,
         test_execution_duration_seconds=test_execution_duration,
         final_visible_model_message=final_visible_message,
+        presentation_warning=trace.observer_warning,
         final_deterministic_status=final_status,
+    )
+    trajectory = render_trajectory_markdown(report, load_trace_events(artifacts.trace))
+    write_trajectory_markdown(artifacts.trajectory, trajectory)
+    report = RunReport.model_validate(
+        {
+            **report.model_dump(mode="python"),
+            "artifacts": artifacts.as_report_mapping(include_trajectory=True),
+            "artifact_metadata": collect_artifact_metadata(
+                artifacts,
+                output_truncation={
+                    "baseline_target_test_log": (
+                        baseline.stdout_truncated or baseline.stderr_truncated
+                    ),
+                    "patched_target_test_log": (
+                        patched_target.stdout_truncated or patched_target.stderr_truncated
+                    ),
+                    "regression_test_log": (
+                        regression.stdout_truncated or regression.stderr_truncated
+                    ),
+                },
+                include_trajectory=True,
+            ),
+        }
     )
     write_report(report, artifacts.report)
     return report
@@ -1127,6 +1269,53 @@ def _result_truncated(result: ToolResult) -> bool:
         for key, value in output.items()
         if key.endswith("truncated") or key == "truncated"
     )
+
+
+def _safe_tool_observation(result: ToolResult) -> dict[str, object]:
+    """Project a tool result into bounded counts without source, Patch, or log bodies."""
+
+    output = result.output or {}
+    observation: dict[str, object] = {"truncated": _result_truncated(result)}
+    if result.error is not None:
+        observation["error_code"] = result.error.code.value
+    allowed_by_tool = {
+        "list_files": ("count", "scanned_paths"),
+        "search_code": ("match_count", "files_considered", "skipped_files"),
+        "read_file": ("start_line", "end_line", "retained_line_count"),
+        "apply_patch": ("patch_size", "normalization_occurred", "recount_used"),
+        "run_target_test": (
+            "outcome",
+            "test_observed",
+            "target_found",
+            "tests_executed",
+            "test_failures",
+            "tests_skipped",
+            "duration_seconds",
+            "timed_out",
+        ),
+        "git_diff": ("insertions", "deletions"),
+    }
+    for key in allowed_by_tool.get(result.tool_name, ()):
+        value = output.get(key)
+        if value is None or isinstance(value, (bool, int, float, str)):
+            observation[key] = value
+    if result.tool_name == "read_file":
+        start = output.get("start_line")
+        end = output.get("end_line")
+        if isinstance(start, int) and isinstance(end, int) and end >= start:
+            observation["lines_returned"] = end - start + 1
+        content = output.get("content")
+        if isinstance(content, str):
+            observation["bytes_returned"] = len(content.encode("utf-8"))
+    if result.tool_name == "apply_patch":
+        affected = output.get("affected_files")
+        if isinstance(affected, list):
+            observation["affected_file_count"] = len(affected)
+    if result.tool_name == "git_diff":
+        modified = output.get("modified_files")
+        if isinstance(modified, list):
+            observation["modified_file_count"] = len(modified)
+    return observation
 
 
 def _repository_state(snapshot: RepositorySnapshot | None) -> RepositoryStateReport | None:

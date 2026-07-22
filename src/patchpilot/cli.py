@@ -17,10 +17,19 @@ from patchpilot.benchmark_spec import BenchmarkSuiteError
 from patchpilot.repair import repair_case
 from patchpilot.reporting import FinalStatus, RunReport
 from patchpilot.runner import verify_case
+from patchpilot.trajectory import (
+    LiveTrajectoryRenderer,
+    ReplayView,
+    TrajectoryFormat,
+    TrajectoryView,
+    load_replay_run,
+    render_replay,
+    write_replay_output,
+)
 
 app = typer.Typer(
     name="patchpilot",
-    help="Reproduce, repair, and deterministically verify Java Maven bug cases.",
+    help="Run and inspect a test-grounded Java/Maven software engineering Agent.",
     no_args_is_help=True,
     pretty_exceptions_enable=False,
 )
@@ -32,7 +41,7 @@ EXIT_VERIFICATION_FAILED = 4
 
 @app.callback()
 def main() -> None:
-    """PatchPilot deterministic verification and bounded repair commands."""
+    """PatchPilot Agent repair, deterministic verification, benchmark, and replay."""
 
 
 def _print_summary(report: RunReport) -> None:
@@ -146,9 +155,29 @@ def repair_command(
             help="Keep the isolated worktree after the run for debugging.",
         ),
     ] = False,
+    trace_view: Annotated[
+        TrajectoryView,
+        typer.Option(
+            "--trace-view",
+            help="Live Agent timeline detail: compact, verbose, or off.",
+        ),
+    ] = TrajectoryView.COMPACT,
+    no_color: Annotated[
+        bool,
+        typer.Option(
+            "--no-color",
+            help="Render deterministic plain text without terminal color.",
+        ),
+    ] = False,
 ) -> None:
     """Repair a validated Agent Case through safe tools and deterministic tests."""
 
+    observer = None
+    if trace_view is not TrajectoryView.OFF:
+        observer = LiveTrajectoryRenderer(
+            view=trace_view,
+            sink=lambda content: typer.echo(content, nl=False, color=not no_color),
+        )
     try:
         report = repair_case(
             case_file,
@@ -158,7 +187,7 @@ def repair_command(
             max_tool_calls=max_tool_calls,
             max_patch_attempts=max_patch_attempts,
             keep_worktree=keep_worktree,
-            progress=typer.echo,
+            trace_observer=observer,
         )
     except (OSError, ValueError) as exc:
         typer.echo(f"Infrastructure error before report creation: {exc}", err=True)
@@ -168,6 +197,48 @@ def repair_command(
     code = _exit_code(report.final_status)
     if code:
         raise typer.Exit(code=code)
+
+
+@app.command("replay-run")
+def replay_run_command(
+    path: Annotated[
+        Path,
+        typer.Argument(help="Completed run directory, report.json, or trace.jsonl."),
+    ],
+    view: Annotated[
+        ReplayView,
+        typer.Option("--view", help="Replay detail: compact or verbose."),
+    ] = ReplayView.COMPACT,
+    output_format: Annotated[
+        TrajectoryFormat,
+        typer.Option("--format", help="Replay output format: text or markdown."),
+    ] = TrajectoryFormat.TEXT,
+    output: Annotated[
+        Path | None,
+        typer.Option("--output", help="Write output outside the original run directory."),
+    ] = None,
+    no_color: Annotated[
+        bool,
+        typer.Option("--no-color", help="Render deterministic plain text."),
+    ] = False,
+) -> None:
+    """Replay a completed Agent trajectory without credentials or execution."""
+
+    try:
+        replay = load_replay_run(path)
+        content = render_replay(
+            replay,
+            view=TrajectoryView(view.value),
+            markdown=output_format is TrajectoryFormat.MARKDOWN,
+        )
+        if output is None:
+            typer.echo(content, nl=False, color=not no_color)
+        else:
+            destination = write_replay_output(replay, output, content)
+            typer.echo(f"Replay written: {destination}")
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Replay error: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INVALID_CASE) from exc
 
 
 @app.command("validate-benchmark")

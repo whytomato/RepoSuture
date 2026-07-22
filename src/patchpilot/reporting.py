@@ -8,6 +8,7 @@ import math
 import re
 import threading
 import uuid
+from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -44,6 +45,38 @@ class TestOutcome(StrEnum):
     FAIL = "FAIL"
     TIMEOUT = "TIMEOUT"
     INFRASTRUCTURE_ERROR = "INFRASTRUCTURE_ERROR"
+
+
+class SanitizedTraceEvent(BaseModel):
+    """One bounded, content-safe event shared by trace storage and presentation."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sequence: int = Field(ge=1)
+    timestamp: datetime
+    event_type: Annotated[
+        str,
+        StringConstraints(
+            strict=True,
+            min_length=1,
+            max_length=100,
+            pattern=r"^[a-z][a-z0-9_]*$",
+        ),
+    ]
+    status: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=100)]
+    duration: float | None = Field(default=None, ge=0)
+    run_id: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=160)
+    ] | None = None
+    metadata: dict[str, object] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_timestamp(self) -> Self:
+        if self.timestamp.utcoffset() != UTC.utcoffset(self.timestamp):
+            raise ValueError("trace timestamps must use timezone-aware UTC")
+        if self.duration is not None and not math.isfinite(self.duration):
+            raise ValueError("trace duration must be finite")
+        return self
 
 
 class TestResultReport(BaseModel):
@@ -262,6 +295,12 @@ class RunReport(BaseModel):
     workflow: Literal["deterministic_verify", "agent_repair"] = "deterministic_verify"
     provider: Annotated[str, StringConstraints(strict=True, max_length=64)] | None = None
     model: Annotated[str, StringConstraints(strict=True, max_length=256)] | None = None
+    issue_title: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=300)
+    ] | None = None
+    issue_description: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=20_000)
+    ] | None = None
     total_model_turns: int = Field(default=0, ge=0)
     total_tool_calls: int = Field(default=0, ge=0)
     tool_calls_by_name: dict[str, int] = Field(default_factory=dict)
@@ -281,6 +320,9 @@ class RunReport(BaseModel):
     test_execution_duration_seconds: float = Field(default=0.0, ge=0)
     final_visible_model_message: Annotated[
         str, StringConstraints(strict=True, max_length=65_536)
+    ] | None = None
+    presentation_warning: Annotated[
+        str, StringConstraints(strict=True, min_length=1, max_length=500)
     ] | None = None
     final_deterministic_status: FinalStatus | None = None
 
@@ -330,6 +372,12 @@ class RunReport(BaseModel):
                 strict=False
             ) != metadata.path.resolve(strict=False):
                 raise ValueError(f"artifact metadata path disagrees with artifacts[{name!r}]")
+        if ("trajectory" in self.artifacts) != (
+            "trajectory" in self.artifact_metadata
+        ):
+            raise ValueError(
+                "trajectory must be present in both artifacts and artifact metadata"
+            )
         expected_log_truncation = {
             "baseline_target_test_log": (
                 self.baseline_test_result.stdout_truncated
@@ -479,6 +527,7 @@ class TraceWriter:
         *,
         max_metadata_value_chars: int = 2_000,
         run_id: str | None = None,
+        observer: Callable[[SanitizedTraceEvent], None] | None = None,
     ) -> None:
         if max_metadata_value_chars < 1:
             raise ValueError("max_metadata_value_chars must be positive")
@@ -486,6 +535,8 @@ class TraceWriter:
         self.max_metadata_value_chars = max_metadata_value_chars
         self.run_id = run_id
         self.sequence = 0
+        self.observer = observer
+        self.observer_warning: str | None = None
         self._lock = threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text("", encoding="utf-8")
@@ -502,18 +553,39 @@ class TraceWriter:
             raise ValueError("trace duration must be a finite non-negative number")
         with self._lock:
             self.sequence += 1
-            event: dict[str, object] = {
-                "sequence": self.sequence,
-                "timestamp": datetime.now(UTC).isoformat(),
-                "event_type": event_type,
-                "duration": duration,
-                "status": status,
-                "metadata": self._limit_metadata(metadata or {}),
-            }
-            if self.run_id is not None:
-                event["run_id"] = self.run_id
+            event = SanitizedTraceEvent(
+                sequence=self.sequence,
+                timestamp=datetime.now(UTC),
+                event_type=event_type,
+                duration=duration,
+                status=status,
+                metadata=self._limit_metadata(metadata or {}),
+                run_id=self.run_id,
+            )
             with self.path.open("a", encoding="utf-8", newline="\n") as stream:
-                stream.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+                stream.write(
+                    json.dumps(
+                        event.model_dump(mode="json"),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+            observer = self.observer
+        if observer is not None:
+            try:
+                observer(event)
+            except Exception as exc:
+                with self._lock:
+                    if self.observer is observer:
+                        self.observer = None
+                        detail = self._redact_sensitive_text(
+                            str(exc).strip() or type(exc).__name__
+                        )
+                        self.observer_warning = (
+                            f"trace presentation observer disabled after "
+                            f"{type(exc).__name__}: {detail}"
+                        )[:500]
 
     def _limit_metadata(self, metadata: dict[str, object]) -> dict[str, object]:
         limited: dict[str, object] = {}
@@ -547,9 +619,10 @@ class TraceWriter:
         if value is None or isinstance(value, (bool, int, float)):
             return value
         if isinstance(value, str):
-            if len(value) <= self.max_metadata_value_chars:
-                return value
-            return value[: self.max_metadata_value_chars] + "…"
+            redacted = self._redact_sensitive_text(value)
+            if len(redacted) <= self.max_metadata_value_chars:
+                return redacted
+            return redacted[: self.max_metadata_value_chars] + "…"
         if isinstance(value, (list, tuple)):
             return [self._limit_value(item, depth=depth + 1) for item in value[:50]]
         if isinstance(value, dict):
@@ -564,6 +637,29 @@ class TraceWriter:
             return limited
         return self._limit_value(str(value), depth=depth + 1)
 
+    @staticmethod
+    def _redact_sensitive_text(value: str) -> str:
+        redacted = re.sub(
+            r"(?i)authorization\s*:\s*bearer\s+[^\s,;]+",
+            "<redacted>",
+            value,
+        )
+        redacted = re.sub(
+            r"(?i)\bbearer\s+[A-Za-z0-9._-]{8,}",
+            "<redacted>",
+            redacted,
+        )
+        redacted = re.sub(
+            r"(?i)\bsk(?:-or)?-[A-Za-z0-9_-]{8,}",
+            "<redacted>",
+            redacted,
+        )
+        return re.sub(
+            r"(?i)\b(?:OPENAI_API_KEY|OPENROUTER_API_KEY)\s*=\s*[^\s,;]+",
+            "<redacted>",
+            redacted,
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ArtifactPaths:
@@ -575,9 +671,10 @@ class ArtifactPaths:
     baseline_log: Path
     patched_target_log: Path
     regression_log: Path
+    trajectory: Path
 
-    def as_report_mapping(self) -> dict[str, str]:
-        return {
+    def as_report_mapping(self, *, include_trajectory: bool = False) -> dict[str, str]:
+        mapping = {
             "report": str(self.report),
             "trace": str(self.trace),
             "final_patch": str(self.final_patch),
@@ -585,15 +682,21 @@ class ArtifactPaths:
             "patched_target_test_log": str(self.patched_target_log),
             "regression_test_log": str(self.regression_log),
         }
+        if include_trajectory:
+            mapping["trajectory"] = str(self.trajectory)
+        return mapping
 
-    def metadata_files(self) -> dict[str, Path]:
-        return {
+    def metadata_files(self, *, include_trajectory: bool = False) -> dict[str, Path]:
+        files = {
             "trace": self.trace,
             "final_patch": self.final_patch,
             "baseline_target_test_log": self.baseline_log,
             "patched_target_test_log": self.patched_target_log,
             "regression_test_log": self.regression_log,
         }
+        if include_trajectory:
+            files["trajectory"] = self.trajectory
+        return files
 
 
 def create_artifact_paths(
@@ -630,6 +733,7 @@ def create_artifact_paths(
         baseline_log=directory / "baseline-target-test.log",
         patched_target_log=directory / "patched-target-test.log",
         regression_log=directory / "regression-test.log",
+        trajectory=directory / "trajectory.md",
     )
     for path in (
         paths.final_patch,
@@ -645,13 +749,16 @@ def collect_artifact_metadata(
     paths: ArtifactPaths,
     *,
     output_truncation: dict[str, bool] | None = None,
+    include_trajectory: bool = False,
 ) -> dict[str, ArtifactMetadata]:
     """Hash every completed non-report artifact without following escapes."""
 
     truncation = output_truncation or {}
     resolved_directory = paths.directory.resolve(strict=True)
     records: dict[str, ArtifactMetadata] = {}
-    for name, path in paths.metadata_files().items():
+    for name, path in paths.metadata_files(
+        include_trajectory=include_trajectory
+    ).items():
         resolved = path.resolve(strict=True)
         if resolved.parent != resolved_directory or not resolved.is_file():
             raise OSError(f"artifact is not a regular file in the run directory: {path}")

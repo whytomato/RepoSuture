@@ -1,24 +1,88 @@
 # PatchPilot
 
-PatchPilot 是面向 Java Maven 项目的测试驱动 Bug 修复工具。它把模型生成候选 Patch
-与最终判定严格分离：模型只能通过受限工具观察和修改隔离 worktree；只有真实
-Maven/JUnit 证据能够产生 `RESOLVED`。
+PatchPilot is a test-grounded Software Engineering Agent for autonomous Java/Maven bug repair.
 
-当前包含三个可并存的工作流：
+它让模型动态选择受限的软件工程工具，同时把正确性完全交给隔离 Git worktree、Maven、
+JUnit、目标测试、完整回归和仓库完整性检查。模型的文字声明永远不能产生 `RESOLVED`。
 
-- Milestone 1 — deterministic execution environment：复现固定 commit 上的目标测试失败，
-  应用 Case 中的 golden Patch，再运行目标测试和完整回归。命令为 `verify-case`，无需
-  API Key。
-- Milestone 2 — Agent runtime foundation 与 OpenAI Responses API repair：单个模型通过六个
-  PatchPilot 自定义工具提出生产代码 Patch；harness 在每次接受 Patch 后自动验证。命令为
-  `repair`。
-- Milestone 3 — reproducible Java benchmark and evaluation harness：用六个固定 Java 17/Maven
-  缺陷验证 benchmark 完整性，顺序执行彼此隔离的 Agent 尝试，并生成结构化逐次与聚合报告。
-  命令为 `validate-benchmark` 和 `benchmark`。
+## Agent in action
+
+下面是 scripted regression-trap 的真实 harness 轨迹摘要；它展示反馈循环，不代表 live 模型能力：
+
+```text
+[PREPARE] Creating isolated worktree at commit d54d13bf
+[VERIFY]  Baseline target test ........................ FAIL
+[TURN 1/12] DECIDE
+[ACTION]  apply_patch patch_size=434
+[OBSERVE] Patch attempt 1 accepted; 1 production file changed
+[VERIFY]  Target test (Patch 1) ....................... PASS
+[VERIFY]  Regression suite (Patch 1) .................. FAIL
+[REPLAN] Candidate reverted; regression diagnostic returned to Agent
+[TURN 2/12] DECIDE
+[ACTION]  apply_patch patch_size=554
+[VERIFY]  Target test (Patch 2) ....................... PASS
+[VERIFY]  Regression suite (Patch 2) .................. PASS
+[FINISH]  RESOLVED
+```
+
+完整的已清洗实跑文档见
+[`docs/examples/scripted-regression-trap-trajectory.md`](docs/examples/scripted-regression-trap-trajectory.md)，
+运行时职责与边界见 [`docs/AGENT_RUNTIME.md`](docs/AGENT_RUNTIME.md)。
+
+```mermaid
+stateDiagram-v2
+    [*] --> Prepare
+    Prepare --> Decide: baseline failure reproduced
+    Decide --> Act: model requests tool
+    Act --> Observe: tool executes
+    Observe --> Decide: more evidence needed
+    Act --> Verify: Patch accepted
+    Verify --> Finish: target + regression pass
+    Verify --> Replan: Patch/test/regression failure
+    Replan --> Decide: structured feedback
+    Decide --> Finish: stop or budget exhausted
+```
+
+关键安全属性：每次运行使用固定 commit 的全新隔离 worktree；只有六个严格 schema 工具；
+Patch 必须通过路径、操作、生产文件策略和 `git apply --check`；失败候选会回滚；所有预算有界；
+trace、实时视图和 replay 都只使用已清洗事件，不包含 Patch 正文、源码全文、凭据或隐藏推理。
+
+快速开始：
+
+```powershell
+conda activate patchpilot
+python -m pip install -e ".[dev]"
+python benchmarks/bootstrap_fixture.py
+
+patchpilot repair benchmarks/cases/null-email-agent.yaml `
+  --artifacts-dir .artifacts-live --trace-view compact --no-color
+
+patchpilot replay-run .artifacts-live/<run-id> `
+  --view verbose --format text --no-color
+```
+
+`repair` 的 live provider 会使用 API，可能产生费用；默认测试、确定性验证和 replay 不需要
+凭据或网络。首次 Maven Wrapper/依赖下载完成后，fixture 可离线执行。
+
+## What makes PatchPilot an Agent?
+
+- 模型根据当前证据动态选择 `list_files`、`search_code`、`read_file`、`apply_patch`、
+  `run_target_test` 或 `git_diff`，动作并非完全硬编码序列。
+- 每个工具的有界观察会返回同一模型会话；Patch 拒绝、目标失败和回归失败会改变后续动作。
+- 接受 Patch 后，环境自动运行确定性验证；失败候选回滚并把结构化证据送回 Agent 继续规划。
+- 循环持续到目标与回归都通过，或模型停止、策略/基础设施失败、API 失败或预算耗尽。
+- verifier 而不是模型拥有正确性判定；不会展示或重建隐藏 chain-of-thought。
+
+## Milestone history
+
+- Milestone 1：确定性复现固定 commit、应用 validation golden Patch、执行目标和完整回归。
+- Milestone 2：provider-independent 单 Agent 工具循环和 Responses API 集成。
+- Milestone 3：六 Case Java 17/Maven benchmark、确定性校验、顺序批处理和聚合报告。
+- Milestone 4A：安全 Patch normalization、错误 taxonomy、`--recount` 限定回退和事务回滚。
+- Milestone 4B：基于 canonical trace 的实时 Agent timeline、离线 replay 和 `trajectory.md`。
 
 本项目没有多 Agent、LangChain、LangGraph、OpenAI Agents SDK、MCP、RAG、向量数据库、
-Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放 Shell、
-`local_shell`、computer-use、code-interpreter、file-search 或内置 apply-patch 工具。
+Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放任意 Shell。
 
 ## 当前范围
 
@@ -111,8 +175,25 @@ $env:OPENAI_API_KEY = "<your-api-key>"
 $env:PATCHPILOT_MODEL = "<your-model-name>"
 
 patchpilot repair benchmarks/cases/null-email-agent.yaml `
-  --artifacts-dir .artifacts-live
+  --artifacts-dir .artifacts-live `
+  --trace-view compact
 ```
+
+`--trace-view compact|verbose|off` 只改变展示，不改变 prompt、工具或预算。`verbose` 增加有界参数、
+计数、耗时和错误码；`off` 关闭实时 timeline 但保留最终摘要。`--no-color` 适合重定向与逐字比较。
+完成后可在无 API Key、无网络且不运行 Git/Maven 的情况下重放成功或失败轨迹：
+
+```powershell
+patchpilot replay-run .artifacts-live/<run-id> `
+  --view verbose --format text --no-color
+
+patchpilot replay-run .artifacts-live/<run-id>/report.json `
+  --view verbose --format markdown `
+  --output .artifacts-live-replay.md --no-color
+```
+
+Replay 会校验 report/trace schema、sequence、run id、终态、工件 containment、大小和 SHA-256；
+输出路径不得位于原 run 目录内，因此不会覆盖原始证据。
 
 一次性模型覆盖和预算控制：
 
@@ -339,6 +420,8 @@ allowed_file_policy:
 - `baseline-target-test.log`：baseline Maven/JUnit 完整有界日志。
 - `patched-target-test.log`：每次候选目标测试日志，带尝试分隔符。
 - `regression-test.log`：每次完整回归日志，带尝试分隔符。
+- `trajectory.md`：从同一 canonical `trace.jsonl` 派生的安全 Agent 时间线、验证证据和指标；
+  不嵌入 Patch 正文或隐藏推理。
 
 Agent report 还记录 provider/model、模型轮数、工具调用总数及按名称计数、Patch 尝试数、目标与
 回归执行次数、输入/输出/推理 token 数（SDK 提供时）、API request ID、模型延迟、最终可见
