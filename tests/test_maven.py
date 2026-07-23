@@ -4,10 +4,13 @@ import os
 from dataclasses import replace
 from pathlib import Path
 
-from patchpilot.case_spec import TargetTest
-from patchpilot.maven import MavenRunner
-from patchpilot.process import ProcessResult, ProcessRunner
-from patchpilot.reporting import TestOutcome
+import pytest
+
+import reposuture.maven as maven_module
+from reposuture.case_spec import TargetTest
+from reposuture.maven import MavenRunner
+from reposuture.process import ProcessResult, ProcessRunner
+from reposuture.reporting import TestOutcome
 
 
 def process_result(tmp_path: Path, *, exit_code: int) -> ProcessResult:
@@ -238,6 +241,54 @@ def test_regression_detects_failure_unrelated_to_target(tmp_path: Path) -> None:
 
     assert execution.outcome is TestOutcome.FAIL
     assert execution.test_observed is True
+
+
+def test_surefire_evidence_remains_bounded_by_total_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reports = tmp_path / "target/surefire-reports"
+    reports.mkdir(parents=True)
+    (reports / "TEST-bounded.xml").write_text(
+        '<testsuite><testcase name="one" classname="example.Bounded"/></testsuite>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(maven_module, "MAX_SUREFIRE_TOTAL_BYTES", 16)
+
+    execution = MavenRunner(ProcessRunner()).interpret_regression_process(
+        process_result(tmp_path, exit_code=0), tmp_path
+    )
+
+    assert execution.outcome is TestOutcome.INFRASTRUCTURE_ERROR
+    assert execution.infrastructure_error == (
+        "aggregate Surefire XML reports exceeded the configured size limit"
+    )
+
+
+def test_surefire_evidence_remains_bounded_per_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reports = tmp_path / "target/surefire-reports"
+    reports.mkdir(parents=True)
+    (reports / "TEST-bounded.xml").write_text(
+        '<testsuite><testcase name="one" classname="example.Bounded"/></testsuite>',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(maven_module, "MAX_SUREFIRE_REPORT_BYTES", 16)
+
+    execution = MavenRunner(ProcessRunner()).interpret_regression_process(
+        process_result(tmp_path, exit_code=0), tmp_path
+    )
+
+    assert execution.outcome is TestOutcome.INFRASTRUCTURE_ERROR
+    assert execution.infrastructure_error == (
+        "an individual Surefire XML report exceeded the configured size limit"
+    )
+
+
+def test_default_surefire_total_limit_supports_large_bounded_suites() -> None:
+    assert maven_module.MAX_SUREFIRE_REPORT_BYTES == 16 * 1024 * 1024
+    assert maven_module.MAX_SUREFIRE_TOTAL_BYTES == 64 * 1024 * 1024
+    assert maven_module.MAX_SUREFIRE_REPORT_FILES == 1_000
 
 
 class AssertStaleReportsRemovedRunner(ProcessRunner):

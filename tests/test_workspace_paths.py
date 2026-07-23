@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from patchpilot.process import ProcessRunner
-from patchpilot.workspace import PathSecurityError, safe_worktree_path
+from reposuture.process import ProcessRunner
+from reposuture.workspace import PathSecurityError, safe_worktree_path
 
 
 def test_safe_worktree_path_accepts_contained_relative_path(tmp_path: Path) -> None:

@@ -7,24 +7,24 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from patchpilot.agent import (
+from reposuture.agent import (
     AgentExecutionStatus,
     AgentFinalResult,
     AgentLoop,
     AgentResponse,
     AgentState,
     FakeLLM,
-    PatchPilotToolEnvironment,
+    RepoSutureToolEnvironment,
     ToolCall,
     ToolErrorCode,
-    create_patchpilot_tool_executor,
+    create_reposuture_tool_executor,
 )
-from patchpilot.case_spec import TargetTest
-from patchpilot.maven import MavenRunner
-from patchpilot.patching import PatchErrorCode
-from patchpilot.process import ProcessRunner
-from patchpilot.reporting import TestOutcome
-from patchpilot.workspace import GitWorktree
+from reposuture.case_spec import TargetTest
+from reposuture.maven import MavenRunner
+from reposuture.patching import PatchErrorCode
+from reposuture.process import ProcessRunner
+from reposuture.reporting import TestOutcome
+from reposuture.workspace import GitWorktree
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_SOURCE = PROJECT_ROOT / "benchmarks/fixtures/null-email-repo"
@@ -57,13 +57,13 @@ def _initialize_repository(tmp_path: Path) -> tuple[Path, str]:
     runner = ProcessRunner()
     _git(runner, repository, "init", "--quiet", "--initial-branch=main")
     _git(runner, repository, "config", "core.autocrlf", "false")
-    _git(runner, repository, "config", "user.name", "PatchPilot Agent Tests")
+    _git(runner, repository, "config", "user.name", "RepoSuture Agent Tests")
     _git(
         runner,
         repository,
         "config",
         "user.email",
-        "patchpilot-agent@example.invalid",
+        "reposuture-agent@example.invalid",
     )
     _git(runner, repository, "add", "--all")
     _git(runner, repository, "update-index", "--chmod=+x", "mvnw")
@@ -71,7 +71,7 @@ def _initialize_repository(tmp_path: Path) -> tuple[Path, str]:
     return repository, _git(runner, repository, "rev-parse", "HEAD")
 
 
-def _lightweight_environment(tmp_path: Path) -> PatchPilotToolEnvironment:
+def _lightweight_environment(tmp_path: Path) -> RepoSutureToolEnvironment:
     worktree = tmp_path / "linked-worktree"
     worktree.mkdir()
     (worktree / ".git").write_text(
@@ -81,7 +81,7 @@ def _lightweight_environment(tmp_path: Path) -> PatchPilotToolEnvironment:
     source = worktree / SOURCE_PATH
     source.parent.mkdir(parents=True)
     source.write_text("class UserRegistrationService { String email; }\n", encoding="utf-8")
-    return PatchPilotToolEnvironment(
+    return RepoSutureToolEnvironment(
         worktree=worktree,
         target_test=TARGET,
         target_test_timeout_seconds=30,
@@ -112,7 +112,7 @@ def test_apply_patch_rejection_returns_actionable_bounded_feedback(
             worktrees_root=Path(worktrees_root),
         )
         with manager as worktree:
-            environment = PatchPilotToolEnvironment(
+            environment = RepoSutureToolEnvironment(
                 worktree=worktree,
                 target_test=TARGET,
                 target_test_timeout_seconds=300,
@@ -120,7 +120,7 @@ def test_apply_patch_rejection_returns_actionable_bounded_feedback(
                 production_java_only=True,
                 max_patch_attempts=2,
             )
-            executor = create_patchpilot_tool_executor(environment)
+            executor = create_reposuture_tool_executor(environment)
             malformed = "@@ -1 +1 @@\n-old\n+new\n"
 
             result = executor.execute(
@@ -162,7 +162,7 @@ def test_patch_diagnostic_redacts_credential_shaped_text(tmp_path: Path) -> None
             worktrees_root=Path(worktrees_root),
         )
         with manager as worktree:
-            environment = PatchPilotToolEnvironment(
+            environment = RepoSutureToolEnvironment(
                 worktree=worktree,
                 target_test=TARGET,
                 target_test_timeout_seconds=300,
@@ -170,7 +170,7 @@ def test_patch_diagnostic_redacts_credential_shaped_text(tmp_path: Path) -> None
                 production_java_only=True,
                 max_patch_attempts=2,
             )
-            result = create_patchpilot_tool_executor(environment).execute(
+            result = create_reposuture_tool_executor(environment).execute(
                 ToolCall(
                     call_id="secret-patch-1",
                     name="apply_patch",
@@ -192,7 +192,7 @@ def test_patch_diagnostic_redacts_credential_shaped_text(tmp_path: Path) -> None
 def test_apply_patch_tool_description_contains_a_safe_complete_example(
     tmp_path: Path,
 ) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     description = next(spec.description for spec in executor.specs if spec.name == "apply_patch")
 
     assert "Return only the Patch" in description
@@ -229,13 +229,13 @@ def test_agent_executes_complete_fake_repair_workflow_with_real_tools(
             assert baseline.outcome is TestOutcome.FAIL
             assert baseline.test_observed is True
 
-            environment = PatchPilotToolEnvironment(
+            environment = RepoSutureToolEnvironment(
                 worktree=worktree,
                 target_test=TARGET,
                 target_test_timeout_seconds=300,
                 process_runner=runner,
             )
-            executor = create_patchpilot_tool_executor(environment)
+            executor = create_reposuture_tool_executor(environment)
             fake_llm = FakeLLM.repair_workflow(
                 patch=GOLDEN_PATCH.read_text(encoding="utf-8"),
                 source_path=SOURCE_PATH,
@@ -288,7 +288,7 @@ def test_agent_executes_complete_fake_repair_workflow_with_real_tools(
 
 
 def test_unknown_tool_call_is_a_structured_rejection(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM(
         [
             AgentResponse.request_tool(
@@ -309,7 +309,7 @@ def test_unknown_tool_call_is_a_structured_rejection(tmp_path: Path) -> None:
 
 
 def test_invalid_tool_arguments_are_a_structured_rejection(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM(
         [
             AgentResponse.request_tool(
@@ -329,7 +329,7 @@ def test_invalid_tool_arguments_are_a_structured_rejection(tmp_path: Path) -> No
 
 
 def test_tool_execution_failure_is_structured(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM(
         [
             AgentResponse.request_tool(
@@ -353,7 +353,7 @@ def test_tool_execution_failure_is_structured(tmp_path: Path) -> None:
 
 
 def test_max_iteration_limit_stops_before_an_extra_model_call(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     repeated_call = AgentResponse.request_tool(
         ToolCall(call_id="list-1", name="list_files", arguments={"path": "."})
     )
@@ -372,7 +372,7 @@ def test_max_iteration_limit_stops_before_an_extra_model_call(tmp_path: Path) ->
 
 
 def test_max_tool_call_limit_stops_before_execution(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM(
         [
             AgentResponse.request_tool(
@@ -398,7 +398,7 @@ def test_max_tool_call_limit_stops_before_execution(tmp_path: Path) -> None:
 
 
 def test_llm_client_failure_stops_with_structured_state(tmp_path: Path) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM(
         [
             AgentResponse.request_tool(
@@ -420,7 +420,7 @@ def test_llm_client_failure_stops_with_structured_state(tmp_path: Path) -> None:
 def test_model_finish_cannot_claim_verified_repair_without_verifier_result(
     tmp_path: Path,
 ) -> None:
-    executor = create_patchpilot_tool_executor(_lightweight_environment(tmp_path))
+    executor = create_reposuture_tool_executor(_lightweight_environment(tmp_path))
     fake_llm = FakeLLM([AgentResponse.finish("The repair succeeded.")])
 
     result = AgentLoop(llm=fake_llm, tool_executor=executor).run(_state())
@@ -448,7 +448,7 @@ def test_repository_read_tools_are_bounded_and_reject_metadata_paths(
         "email", encoding="utf-8"
     )
     (environment.worktree / "notes.txt").write_text("email", encoding="utf-8")
-    executor = create_patchpilot_tool_executor(environment)
+    executor = create_reposuture_tool_executor(environment)
 
     search = executor.execute(
         ToolCall(
@@ -534,14 +534,14 @@ def test_agent_patch_policy_rejects_test_changes_without_modifying_worktree(
             worktrees_root=Path(worktrees_root),
         )
         with manager as worktree:
-            environment = PatchPilotToolEnvironment(
+            environment = RepoSutureToolEnvironment(
                 worktree=worktree,
                 target_test=TARGET,
                 target_test_timeout_seconds=30,
                 process_runner=runner,
                 production_java_only=True,
             )
-            result = create_patchpilot_tool_executor(environment).execute(
+            result = create_reposuture_tool_executor(environment).execute(
                 ToolCall(
                     call_id="forbidden-test-patch",
                     name="apply_patch",

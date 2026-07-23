@@ -9,7 +9,7 @@ import openai
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from patchpilot.agent.base import (
+from reposuture.agent.base import (
     AgentMessage,
     ToolCall,
     ToolError,
@@ -17,24 +17,24 @@ from patchpilot.agent.base import (
     ToolResult,
     ToolSpec,
 )
-from patchpilot.agent.tools import (
-    PatchPilotToolEnvironment,
+from reposuture.agent.tools import (
+    RepoSutureToolEnvironment,
     ToolDefinition,
     ToolExecution,
     ToolExecutor,
-    create_patchpilot_tool_executor,
+    create_reposuture_tool_executor,
 )
-from patchpilot.case_spec import TargetTest
-from patchpilot.models.config import OpenAIModelConfig, load_openai_model_config
-from patchpilot.models.openai_responses import (
+from reposuture.case_spec import TargetTest
+from reposuture.models.config import OpenAIModelConfig, load_openai_model_config
+from reposuture.models.openai_responses import (
     ModelAPIError,
     ModelConfigurationError,
     ModelProtocolError,
     OpenAIResponsesClient,
     strict_function_tool,
 )
-from patchpilot.patching import PatchErrorCode
-from patchpilot.process import ProcessRunner
+from reposuture.patching import PatchErrorCode
+from reposuture.process import ProcessRunner
 
 
 class _SearchInput(BaseModel):
@@ -566,7 +566,7 @@ def test_invalid_request_is_not_retried() -> None:
     assert len(sdk.responses.calls) == 1
 
 
-def test_all_six_patchpilot_tools_have_closed_strict_object_schemas(
+def test_all_six_reposuture_tools_have_closed_strict_object_schemas(
     tmp_path: Path,
 ) -> None:
     worktree = tmp_path / "worktree"
@@ -574,7 +574,7 @@ def test_all_six_patchpilot_tools_have_closed_strict_object_schemas(
     (worktree / ".git").write_text(
         "gitdir: C:/repository/.git/worktrees/schema-test\n", encoding="utf-8"
     )
-    environment = PatchPilotToolEnvironment(
+    environment = RepoSutureToolEnvironment(
         worktree=worktree,
         target_test=TargetTest(class_name="ExampleTest", method_name="fails"),
         target_test_timeout_seconds=30,
@@ -583,7 +583,7 @@ def test_all_six_patchpilot_tools_have_closed_strict_object_schemas(
 
     converted = [
         strict_function_tool(spec)
-        for spec in create_patchpilot_tool_executor(environment).specs
+        for spec in create_reposuture_tool_executor(environment).specs
     ]
 
     expected_properties = {

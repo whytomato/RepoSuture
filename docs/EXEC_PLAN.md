@@ -1,6 +1,82 @@
-# PatchPilot Execution Record
+# RepoSuture Execution Record
 
 Last updated: 2026-07-22
+
+## 2026-07-22 RepoSuture Release 0.3 — rename, repeated evaluation, and real-world bugs
+
+### Living progress
+
+- [x] Confirm the primary checkout is clean `main` at
+  `e2a8d4b89428344223d41a64cbe58f967e1b24a3`, synchronized with the fetched
+  `whytomato/PatchPilot` `origin/main`, with no Git operation in progress.
+- [x] Check the ignored local live configuration without printing values. The configured
+  OpenRouter endpoint and primary model match the requested values; the comparison model
+  variable is absent, so the documented `openai/gpt-5-mini` default applies.
+- [x] Complete the exact-name collision preflight against GitHub repositories, PyPI, arXiv,
+  and an obvious software-Agent search. No material exact collision was found; the dated
+  queries and limitations are recorded in `docs/NAME_CHECK.md`.
+- [x] Rename the distribution, source package, primary CLI, public identity, reports, CI,
+  fixtures, and documentation to RepoSuture while retaining one deprecated `patchpilot`
+  CLI forwarder and explicit legacy report/replay aliases.
+- [x] Add a provider-neutral benchmark-matrix layer over the existing benchmark runner,
+  with deterministic interleaving, dry-run, strict completed-run resume, Wilson intervals,
+  per-model reports, and no second Agent loop.
+- [x] Research and bootstrap exactly three immutable upstream Java/Maven bugs from at least
+  two repositories, keeping clones/build output ignored and validation-only fix provenance
+  outside all Agent-visible inputs.
+- [x] Run the complete offline quality gates and real Maven/JUnit paths: 289 pytest tests
+  passed (one explicit Windows symlink-privilege skip and two network-marked tests
+  deselected), Ruff and mypy passed, MVP validation was 6/6, the scripted harness was 6/6,
+  the complete two-identity offline matrix was 12/12, and the locked real-world suite
+  completed deterministic validation 3/3 with Java 17, Maven 3.9.9, and JUnit.
+- [ ] Commit the clean non-live implementation, rename the GitHub repository through the
+  authenticated GitHub CLI, update origin/About/topics, push `main`, and require passing CI.
+- [ ] From the same clean pushed commit, preflight the two exact OpenRouter models and run
+  exactly 36 fresh MVP attempts plus exactly six fresh real-world attempts, without
+  replacement attempts or budget tuning.
+- [ ] Publish only reviewed sanitized R3/R1 summaries, rerun quality gates, commit and push
+  the result documents, and verify clean matching local/remote `main` SHAs.
+
+### Release invariants
+
+- The existing `RepairRunner`, six tools, Patch transaction, Git worktree, Maven/JUnit
+  verification, rollback, budgets, trace, and correctness oracle remain authoritative.
+- The matrix changes only the model identifier; Case text, commit, fingerprint, prompts,
+  schemas, budgets, endpoint, sequential policy, and verifier stay equal across models.
+- Complete failed live runs are empirical observations and are never silently replaced.
+  Scripted/offline records are never mixed with live capability aggregates.
+- Third-party repositories exist only in an ignored cache. Public Cases contain bounded
+  issue provenance but no fix commit, fix PR, expected file, production diff, golden Patch,
+  hidden validation path, or solution note.
+- The public remote is renamed only after name checks, deterministic validation, clean
+  implementation commits, and a clean working tree. Live evaluation starts only after the
+  renamed remote, local `main`, and CI agree on the same clean commit.
+
+### Implementation evidence in progress
+
+- Source moved from `src/patchpilot` to `src/reposuture`; distribution/primary CLI are
+  `reposuture` 0.3.0. The deprecated `patchpilot` entry point delegates to the same Typer
+  app, writes one stderr warning, and preserves exit status. New benchmark metadata uses
+  neutral `project_*` fields while loading the two historical `patchpilot_*` aliases.
+- The matrix plan produces 36 unique interleaved MVP attempts for two models and three
+  runs. Two scripted identities completed independent real Git/Maven/JUnit repairs; strict
+  live-mode resume reused completed observations without model calls and rejected a
+  tampered Patch artifact.
+- The exact release dry-run printed `6 Cases x 3 runs x 2 models = 36 live attempts`, the
+  entire deterministic schedule, and created no live artifact directory.
+- Real-world provenance is locked to Apache Commons Lang PR #1699 and Apache Commons
+  Collections PRs #704/#714. The ignored bootstrap produced three parentless deterministic
+  commits from buggy code plus upstream test-only overlays. The hidden production Patches
+  match upstream diffs byte-for-byte.
+- Initial manual validation exposed two harness/environment facts rather than Case results:
+  the upstream commits lack Maven Wrapper launchers, and the Windows host compiles Commons
+  Collections much more slowly than the micro fixtures. The bootstrap now attaches the
+  existing SHA-pinned Maven 3.9.9 launcher without changing upstream `pom.xml` or production
+  code, force-tracks its properties despite upstream ignore rules, and records bounded
+  1200/2400-second target/regression limits. The completed validation reproduced all three
+  baseline failures, applied only the locked hidden upstream production diffs, and then
+  passed all three target tests and relevant regression suites. Its fingerprint is
+  `345839d264b3b5c144fa8f9bbc75b419d917a4c0266d80c119c3dfb34ec19e82`.
 
 ## 2026-07-22 Milestone 5 — release hardening and first clean live evaluation
 
@@ -250,6 +326,14 @@ Last updated: 2026-07-22
   No post-change OpenRouter smoke was fabricated when configuration was unavailable.
 - [x] Fast-forward clean `main`, revalidate the actual primary checkout, push only
   `main` to `origin/main`, and verify the remote SHA.
+
+### Later validation of the historical 4A change
+
+Milestone 4A correctly recorded that no post-change live result was fabricated at that
+time. Milestone 5 later executed a clean six-Case R1 evaluation on commit
+`944fc6aab83c64848c4eae11f291db80ebc69041`; all six single attempts resolved and the
+hardened ingestion/replanning path was exercised. That one-attempt-per-Case observation
+remains non-statistical and is not combined with Release 0.3's fresh R3 stability study.
 
 ### Safety and design decisions
 

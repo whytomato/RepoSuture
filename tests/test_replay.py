@@ -10,9 +10,9 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from patchpilot.cli import app
-from patchpilot.process import ProcessRunner
-from patchpilot.reporting import (
+from reposuture.cli import app
+from reposuture.process import ProcessRunner
+from reposuture.reporting import (
     ArtifactMetadata,
     FinalStatus,
     RunReport,
@@ -20,7 +20,7 @@ from patchpilot.reporting import (
     TraceWriter,
     write_report,
 )
-from patchpilot.trajectory import (
+from reposuture.trajectory import (
     TrajectoryView,
     load_replay_run,
     render_replay,
@@ -231,9 +231,9 @@ def test_replay_cli_requires_no_model_git_maven_or_network(
 
     monkeypatch.setattr("subprocess.run", forbidden)
     monkeypatch.setattr("socket.create_connection", forbidden)
-    monkeypatch.setattr("patchpilot.process.ProcessRunner.run", forbidden)
-    monkeypatch.setattr("patchpilot.maven.MavenRunner.run_target", forbidden)
-    monkeypatch.setattr("patchpilot.models.OpenAIResponsesClient.__init__", forbidden)
+    monkeypatch.setattr("reposuture.process.ProcessRunner.run", forbidden)
+    monkeypatch.setattr("reposuture.maven.MavenRunner.run_target", forbidden)
+    monkeypatch.setattr("reposuture.models.OpenAIResponsesClient.__init__", forbidden)
 
     result = CliRunner().invoke(
         app,

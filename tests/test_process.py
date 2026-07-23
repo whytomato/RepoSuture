@@ -5,7 +5,7 @@ import sys
 import time
 from pathlib import Path
 
-from patchpilot.process import ProcessRunner
+from reposuture.process import ProcessRunner
 
 
 def test_process_runner_times_out_and_terminates_process(tmp_path: Path) -> None:
@@ -52,7 +52,7 @@ def test_process_runner_reports_missing_executable(tmp_path: Path) -> None:
     runner = ProcessRunner()
 
     result = runner.run(
-        ["patchpilot-command-that-does-not-exist-7d9c0e"],
+        ["reposuture-command-that-does-not-exist-7d9c0e"],
         cwd=tmp_path,
         timeout_seconds=5,
     )

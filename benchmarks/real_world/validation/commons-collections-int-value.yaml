@@ -1,0 +1,16 @@
+schema_version: 1
+id: commons-collections-int-value
+repository: ../.cache/fixtures/commons-collections-int-value
+base_commit: 0b384617e4ac753f58f6d0af49f5c07d7636c5cf
+issue_title: Integer map lookup truncates values when a default function is supplied
+issue_description: >-
+  An integer lookup using the overload that accepts a default function truncates values
+  outside the byte range. Existing values and values returned by the default function must
+  preserve full integer precision without changing the other numeric lookup APIs.
+target_test:
+  class_name: org.apache.commons.collections4.MapUtilsTest
+  method_name: testGetIntValue
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+golden_patch: patches/commons-collections-int-value.patch
+expected_baseline_failure: test_failure

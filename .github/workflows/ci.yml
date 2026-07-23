@@ -44,7 +44,7 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install PatchPilot development dependencies
+      - name: Install RepoSuture development dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -e ".[dev]"
@@ -57,7 +57,7 @@ jobs:
 
       - name: Require deterministic Maven and JUnit smoke evidence
         run: >-
-          patchpilot verify-case benchmarks/cases/null-email.yaml
+          reposuture verify-case benchmarks/cases/null-email.yaml
           --artifacts-dir .artifacts-ci-verify
 
       - name: Run Ruff

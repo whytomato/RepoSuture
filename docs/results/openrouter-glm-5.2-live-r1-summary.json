@@ -1,6 +1,7 @@
 {
   "schema_version": 1,
   "evaluation_id": "openrouter-glm-5.2-live-r1",
+  "historical_name_notice": "Generated under the former project name PatchPilot; the project was subsequently renamed to RepoSuture.",
   "evaluation_timestamp_utc": "2026-07-22T10:58:07.313297Z",
   "patchpilot_git_commit": "944fc6aab83c64848c4eae11f291db80ebc69041",
   "patchpilot_worktree_dirty": false,

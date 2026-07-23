@@ -6,8 +6,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from patchpilot.cli import app
-from patchpilot.reporting import RunReport
+from reposuture.cli import app
+from reposuture.reporting import RunReport
 
 
 def test_invalid_case_exits_nonzero_and_writes_report(tmp_path: Path) -> None:
@@ -40,7 +40,7 @@ def test_report_commit_failure_cannot_return_success(
         del report, report_path
         raise OSError("deliberate atomic report commit failure")
 
-    monkeypatch.setattr("patchpilot.runner.write_report", fail_report_commit)
+    monkeypatch.setattr("reposuture.runner.write_report", fail_report_commit)
 
     result = CliRunner().invoke(
         app,
@@ -118,7 +118,7 @@ def test_trajectory_commit_failure_cannot_return_success(
         raise OSError("deliberate trajectory commit failure")
 
     monkeypatch.setattr(
-        "patchpilot.repair.write_trajectory_markdown",
+        "reposuture.repair.write_trajectory_markdown",
         fail_trajectory_commit,
     )
 

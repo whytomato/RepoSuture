@@ -7,12 +7,12 @@ from pathlib import Path
 import pytest
 import yaml
 
-from patchpilot.agent import AgentResponse, FakeLLM, ToolCall
-from patchpilot.process import ProcessResult, ProcessRunner
-from patchpilot.repair import repair_case
-from patchpilot.reporting import FinalStatus, TestOutcome
-from patchpilot.trajectory import LiveTrajectoryRenderer, TrajectoryView, load_replay_run
-from patchpilot.workspace import ArtifactContainmentError
+from reposuture.agent import AgentResponse, FakeLLM, ToolCall
+from reposuture.process import ProcessResult, ProcessRunner
+from reposuture.repair import repair_case
+from reposuture.reporting import FinalStatus, TestOutcome
+from reposuture.trajectory import LiveTrajectoryRenderer, TrajectoryView, load_replay_run
+from reposuture.workspace import ArtifactContainmentError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 AGENT_CASE = PROJECT_ROOT / "benchmarks/cases/null-email-agent.yaml"
@@ -109,7 +109,7 @@ def _initialize_case(tmp_path: Path) -> tuple[Path, Path]:
     )
     _git(repository, "init", "--quiet", "--initial-branch=main")
     _git(repository, "config", "core.autocrlf", "false")
-    _git(repository, "config", "user.name", "PatchPilot Repair Tests")
+    _git(repository, "config", "user.name", "RepoSuture Repair Tests")
     _git(repository, "config", "user.email", "repair@example.invalid")
     _git(repository, "add", "--all")
     _git(repository, "update-index", "--chmod=+x", "mvnw")

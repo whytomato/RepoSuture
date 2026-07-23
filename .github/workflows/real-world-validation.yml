@@ -1,0 +1,51 @@
+name: Real-world benchmark validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: real-world-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: maven
+
+      - name: Install RepoSuture
+        run: python -m pip install -e ".[dev]"
+
+      - name: Bootstrap locked upstream fixtures
+        run: python benchmarks/real_world/bootstrap_real_world.py
+
+      - name: Validate all three Cases with real Maven and JUnit
+        run: >-
+          reposuture validate-benchmark
+          benchmarks/real_world/suites/maven-real-world-v1.yaml
+          --artifacts-dir .artifacts-real-world-validation
+
+      - name: Upload deterministic reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-world-validation
+          path: .artifacts-real-world-validation
+          if-no-files-found: error

@@ -3,8 +3,8 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "patchpilot"
-version = "0.1.0"
+name = "reposuture"
+version = "0.3.0"
 description = "A test-grounded software engineering agent for autonomous Java/Maven bug repair"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,14 +24,19 @@ dev = [
 ]
 
 [project.scripts]
-patchpilot = "patchpilot.cli:app"
+reposuture = "reposuture.cli:app"
+patchpilot = "reposuture.legacy_cli:legacy_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: runs real Git, Java, and Maven processes"]
+markers = [
+  "integration: runs real Git, Java, and Maven processes",
+  "network: requires explicit network access and is excluded from the default suite",
+]
+addopts = "-m 'not network'"
 
 [tool.ruff]
 line-length = 100

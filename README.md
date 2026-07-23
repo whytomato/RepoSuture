@@ -1,8 +1,8 @@
-# PatchPilot
+# RepoSuture
 
-PatchPilot is a test-grounded Software Engineering Agent for autonomous Java/Maven bug repair.
+RepoSuture is a test-grounded Software Engineering Agent for autonomous Java/Maven bug repair.
 
-[![CI](https://github.com/whytomato/PatchPilot/actions/workflows/ci.yml/badge.svg)](https://github.com/whytomato/PatchPilot/actions/workflows/ci.yml)
+[![CI](https://github.com/whytomato/RepoSuture/actions/workflows/ci.yml/badge.svg)](https://github.com/whytomato/RepoSuture/actions/workflows/ci.yml)
 
 它让模型动态选择受限的软件工程工具，同时把正确性完全交给隔离 Git worktree、Maven、
 JUnit、目标测试、完整回归和仓库完整性检查。模型的文字声明永远不能产生 `RESOLVED`。
@@ -61,17 +61,18 @@ conda activate patchpilot
 python -m pip install -e ".[dev]"
 python benchmarks/bootstrap_fixture.py
 
-patchpilot repair benchmarks/cases/null-email-agent.yaml `
+reposuture repair benchmarks/cases/null-email-agent.yaml `
   --artifacts-dir .artifacts-live --trace-view compact --no-color
 
-patchpilot replay-run .artifacts-live/<run-id> `
+reposuture replay-run .artifacts-live/<run-id> `
   --view verbose --format text --no-color
 ```
 
 `repair` 的 live provider 会使用 API，可能产生费用；默认测试、确定性验证和 replay 不需要
 凭据或网络。首次 Maven Wrapper/依赖下载完成后，fixture 可离线执行。
+本地 Conda 环境仍可沿用旧名称 `patchpilot`；它不是发行包或 CLI 名称。
 
-## What makes PatchPilot an Agent?
+## What makes RepoSuture an Agent?
 
 - 模型根据当前证据动态选择 `list_files`、`search_code`、`read_file`、`apply_patch`、
   `run_target_test` 或 `git_diff`，动作并非完全硬编码序列。
@@ -95,6 +96,54 @@ Agent 编排、真实 Git/Maven/JUnit 和反馈循环，不是 live 模型修复
 commit `944fc6aab83c64848c4eae11f291db80ebc69041` 上完成首次 live 六 Case 评估：单次经验结果为
 6/6 `RESOLVED`。这只是每 Case 一次的观测，不是统计稳健的成功率，也不是 pass@k；完整条件与
 逐 Case 证据见上述结果文档。
+
+## Stability evaluation
+
+历史 R1 是六个 MVP Case、每 Case 一次、单模型的 **6/6 observation**；它不是
+“100% 通用成功率”，也不是 pass@k。Release 0.3 增加三次全新尝试/Case/模型的交错矩阵，
+用于观察重复运行稳定性。矩阵预检命令会明确输出
+`6 Cases x 3 runs x 2 models = 36 live attempts`，失败的完整尝试也会保留，不能用补跑替换。
+
+```powershell
+reposuture benchmark-matrix benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-live-r03-mvp-matrix `
+  --provider openai `
+  --model z-ai/glm-5.2 `
+  --model openai/gpt-5-mini `
+  --runs-per-case 3 --schedule interleaved --dry-run
+```
+
+## Cross-model comparison
+
+两个模型使用同一 commit、benchmark fingerprint、Case 文本、工具 schema、预算、timeout、
+Patch policy、endpoint 和测试 oracle；只有 model id 不同。矩阵报告提供逐尝试/逐 Case 结果、
+描述性 95% Wilson 区间、工具协议丢弃率、tokens、latency 和失败 taxonomy。三次尝试仍是小样本，
+比较是描述性的，不宣称统计显著性。Release 0.3 的最终已清洗结果将在真实 36 次运行后链接，
+不会预先编造。
+
+## Real-world benchmark
+
+独立的 `maven-real-world-v1` 套件锁定三条真实 Apache Java/Maven bug（Commons Lang 1 条、
+Commons Collections 2 条），覆盖溢出边界、数值转换和集合语义；其中一条涉及两个生产实现。
+完整第三方仓库只存在于忽略缓存。设计、上游 URL、许可证、筛选理由和 bootstrap 命令见
+[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。真实两模型结果仅在实际完成
+`3 Cases x 1 run x 2 models = 6 attempts` 后发布。
+
+## Renamed from PatchPilot
+
+项目为避免与另一个软件补丁项目重名而更名为 **RepoSuture**；与该项目不存在隶属、合作或
+关联。Python distribution、package 和主 CLI 均为 `reposuture`。GitHub 旧 URL 在仓库重命名
+后应由 GitHub 重定向，但用户仍应更新本地 origin：
+
+```powershell
+git remote set-url origin https://github.com/whytomato/RepoSuture.git
+```
+
+旧 `patchpilot` CLI 在 0.3 仅作为临时 deprecated alias 转发到同一个实现、保留原退出码并向
+stderr 输出一次迁移警告。旧 benchmark report/replay 的 `patchpilot_git_commit` 和
+`patchpilot_worktree_dirty` 字段仍可读取；新报告只写中性的 `project_*` 字段。为保持已发布
+R1 fingerprint，原六个合成 Java fixture 的 `dev.patchpilot.fixture` namespace 和固定 commit
+作为历史基准数据保留，不代表当前 Python 包名。
 
 本项目没有多 Agent、LangChain、LangGraph、OpenAI Agents SDK、MCP、RAG、向量数据库、
 Web UI、Docker 编排、LSP、EvoMaster 或自动测试生成，也不会向模型开放任意 Shell。
@@ -141,11 +190,11 @@ sequenceDiagram
 ```
 
 Responses 请求使用 `store=False`、`parallel_tool_calls=False`、显式 API timeout、有界重试和
-`max_output_tokens`。PatchPilot 手动保留本轮 `response.output`，包括推理模型续接所需的
+`max_output_tokens`。RepoSuture 手动保留本轮 `response.output`，包括推理模型续接所需的
 非工具项；执行工具后使用完全相同的 `call_id` 追加 `function_call_output`。这些 provider
 续接项只保存在内存，不会把隐藏推理写入 report 或 trace。
 
-若 OpenAI-compatible endpoint 违反 `parallel_tool_calls=False` 并返回多个调用，PatchPilot
+若 OpenAI-compatible endpoint 违反 `parallel_tool_calls=False` 并返回多个调用，RepoSuture
 仍保持单动作 Agent 契约：只接受第一个调用，从第二个调用开始截断未执行的 provider 输出，
 记录安全的兼容性计数，并在第一个工具 observation 返回后让模型重新决策。后续调用不会被
 批量执行，也不会绕过工具预算或验证。
@@ -184,7 +233,7 @@ SHA-256 `4ec3f26fb1a692473aea0235c300bd20f0f9fe741947c82c1234cefd76ac3a3c`。
 Milestone 1 确定性诊断不读取 OpenAI 配置：
 
 ```powershell
-patchpilot verify-case benchmarks/cases/null-email.yaml `
+reposuture verify-case benchmarks/cases/null-email.yaml `
   --artifacts-dir .artifacts
 ```
 
@@ -194,7 +243,7 @@ patchpilot verify-case benchmarks/cases/null-email.yaml `
 $env:OPENAI_API_KEY = "<your-api-key>"
 $env:PATCHPILOT_MODEL = "<your-model-name>"
 
-patchpilot repair benchmarks/cases/null-email-agent.yaml `
+reposuture repair benchmarks/cases/null-email-agent.yaml `
   --artifacts-dir .artifacts-live `
   --trace-view compact
 ```
@@ -204,10 +253,10 @@ patchpilot repair benchmarks/cases/null-email-agent.yaml `
 完成后可在无 API Key、无网络且不运行 Git/Maven 的情况下重放成功或失败轨迹：
 
 ```powershell
-patchpilot replay-run .artifacts-live/<run-id> `
+reposuture replay-run .artifacts-live/<run-id> `
   --view verbose --format text --no-color
 
-patchpilot replay-run .artifacts-live/<run-id>/report.json `
+reposuture replay-run .artifacts-live/<run-id>/report.json `
   --view verbose --format markdown `
   --output .artifacts-live-replay.md --no-color
 ```
@@ -221,7 +270,7 @@ SHA-256；旧版全绝对路径报告只有在本地文件名、元数据、大�
 一次性模型覆盖和预算控制：
 
 ```powershell
-patchpilot repair benchmarks/cases/null-email-agent.yaml `
+reposuture repair benchmarks/cases/null-email-agent.yaml `
   --artifacts-dir .artifacts-live `
   --model "<your-model-name>" `
   --max-turns 10 `
@@ -247,7 +296,7 @@ python benchmarks/run_fake_repair.py `
 Milestone 3 benchmark 先用隐藏 golden Patch 证明六个 Case 本身有效：
 
 ```powershell
-patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
+reposuture validate-benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-validation
 ```
 
@@ -255,7 +304,7 @@ patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
 完整回归；只有模型动作是固定脚本。它只验证 harness，不能作为模型能力数据：
 
 ```powershell
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-scripted `
   --provider scripted `
   --runs-per-case 1
@@ -267,7 +316,7 @@ live 模式为每个 Case 建立全新的 OpenAI 会话和 worktree，默认顺�
 $env:OPENAI_API_KEY = "<your-api-key>"
 $env:PATCHPILOT_MODEL = "<your-model-name>"
 
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-live `
   --provider openai `
   --runs-per-case 1
@@ -275,7 +324,7 @@ patchpilot benchmark benchmarks/suites/mvp.yaml `
 
 可重复使用 `--case <id>` 过滤 Case，并可覆盖 turns、tool calls、Patch、目标测试、回归和总时长
 预算；`--random-seed` 只记录 provider 适用时的元数据，不伪造确定性。live 调用会使用 API，
-可能产生费用。PatchPilot 不使用硬编码价格计算成本。
+可能产生费用。RepoSuture 不使用硬编码价格计算成本。
 
 MVP 的六类缺陷为 null 输入验证、分页边界、enum/status 过滤、条件/布尔逻辑、字符串规范化，
 以及可令目标通过但破坏回归的 trap。每个 Case 都有至少一个非目标回归测试；其中两个 Case
@@ -318,7 +367,7 @@ header. Header synthesis requires exactly one existing production Java file and 
 `--- a/<path>` / `+++ b/<path>` headers. Paths are never inferred from issue text, prior
 tool calls, hunks, or hidden benchmark data.
 
-PatchPilot does not repair source text, context lines, hunk prefixes, paths, create/delete
+RepoSuture does not repair source text, context lines, hunk prefixes, paths, create/delete
 operations, rename/copy metadata, binary data, mode changes, test/build/CI changes, or
 ambiguous multi-file headers. It always tries strict `git apply --check` first. Only after
 structural and policy checks pass may it try one `git apply --check --recount`; a successful
@@ -336,7 +385,7 @@ the exact remaining Patch-attempt budget. Codes include `PATCH_EMPTY`,
 `PATCH_POST_APPLY_FAILED`, and `PATCH_ROLLBACK_FAILED`.
 
 OpenRouter uses the existing OpenAI-compatible Responses adapter; it is not a new
-PatchPilot provider implementation. Configure only the documented variables:
+RepoSuture provider implementation. Configure only the documented variables:
 
 ```powershell
 $env:OPENAI_API_KEY = "<your-openrouter-api-key>"
@@ -349,7 +398,7 @@ actual endpoint provider as `openrouter`. The clean before/after smoke uses the 
 model, and two-attempt budget:
 
 ```powershell
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-openrouter-smoke-m4a `
   --provider openai `
   --case null-input-validation `
@@ -358,8 +407,11 @@ patchpilot benchmark benchmarks/suites/mvp.yaml `
 ```
 
 Run this only with genuine credentials. It consumes API quota and may cost money. Never
-commit `.env` or generated artifacts, and do not claim the interface improvement fixed
-the live outcome until a new clean run proves it.
+commit `.env` or generated artifacts. At that historical point the improvement was not yet
+claimed successful. A later clean R1 evaluation exercised the hardened ingestion path and
+resolved all six single attempts, while remaining explicitly non-statistical. Release 0.3's
+fresh three-run-per-Case experiment is the first stability-oriented follow-up and does not
+combine those historical R1 observations.
 
 ## Case 格式
 
@@ -469,7 +521,7 @@ Agent report 还记录 provider/model、模型轮数、工具调用总数及按�
   文档和其他文件在 Git 应用前即被策略拒绝，不会留下部分修改。
 - Patch 内容在内存中冻结；同一字节流通过 stdin 交给 `git apply --check` 和 `git apply`，
   affected files 最终以真实 Git diff 为准。
-- OpenAI SDK 内部重试被禁用；PatchPilot 只有限重试连接、timeout、rate limit、408/409/429
+- OpenAI SDK 内部重试被禁用；RepoSuture 只有限重试连接、timeout、rate limit、408/409/429
   和服务端错误。认证、无效请求、无效 schema 与不支持模型不会反复重试。
 - artifacts 目录不能位于原仓库内；Trace 对 token/password/secret/authorization/environment
   等键脱敏，模型 Patch 正文只以大小和 SHA-256 出现在 Trace 元数据中。
@@ -480,9 +532,9 @@ Agent report 还记录 provider/model、模型轮数、工具调用总数及按�
 python -m pytest -q
 python -m ruff check .
 python -m mypy src
-patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
+reposuture validate-benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-validation
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-scripted --provider scripted
 ```
 
@@ -507,7 +559,7 @@ python -m pytest tests/test_repair_runner.py -q -s
 - 首次 Maven 下载与 live OpenAI 调用需要网络；模型行为、费用、配额和服务可用性不确定。
 - `--keep-worktree` 会保留调试目录，需要用户之后自行处理。
 - Windows/Conda 的旧 GBK shell 可能因既有 PATH 字符在 `conda activate` 时失败；可使用
-  `conda run -n patchpilot ...`，不影响标准 `python -m ...` 用法。
+  `conda run -n reposuture ...`，不影响标准 `python -m ...` 用法。
 
 下一阶段建议是基于真实、明确执行的 live 结果加固评估与 provider 可恢复性，而不是开始多
 Agent、MCP、RAG、自动测试生成、EvoMaster、LSP 或 UI 工作。

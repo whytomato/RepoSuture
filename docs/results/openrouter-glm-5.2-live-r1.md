@@ -1,5 +1,8 @@
 # OpenRouter GLM-5.2 live evaluation — run 1
 
+> Generated under the former project name PatchPilot; the project was subsequently
+> renamed to RepoSuture. Historical metrics and identifiers below are unchanged.
+
 This is a genuine live-model evaluation of PatchPilot's six-Case MVP benchmark. It is not
 a scripted result. Each Case has exactly one attempt, so the observed **6/6 empirical
 result is not statistically robust and is not pass@k**.
@@ -19,10 +22,10 @@ result is not statistically robust and is not pass@k**.
 - Environment: Windows, Python 3.11.15, Java 21.0.8 executing Java 17 fixtures,
   Maven 3.9.9 via Maven Wrapper 3.3.4, OpenAI SDK 2.46.0
 
-Command:
+Equivalent command using the current CLI:
 
 ```powershell
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-live-m5-suite-r1 `
   --provider openai `
   --runs-per-case 1

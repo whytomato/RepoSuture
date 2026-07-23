@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from patchpilot.agent import AgentResponse, FakeLLM, ToolCall
-from patchpilot.repair import repair_case
-from patchpilot.reporting import FinalStatus
+from reposuture.agent import AgentResponse, FakeLLM, ToolCall
+from reposuture.repair import repair_case
+from reposuture.reporting import FinalStatus
 
 SOURCE_PATH = "src/main/java/dev/patchpilot/fixture/UserRegistrationService.java"
 

@@ -1,0 +1,30 @@
+schema_version: 2
+workflow: agent_repair
+id: commons-lang-mid-overflow
+repository: ../.cache/fixtures/commons-lang-mid-overflow
+base_commit: 875b24a5ba91c94dce30e15f93321628aa95f24c
+issue_title: Substring extraction fails for an extremely large requested length
+issue_description: >-
+  Requesting the remainder of a string with a valid start position and a very large length
+  can return the wrong substring when the position and length overflow. The String and
+  mutable string-builder APIs must retain their established behavior for ordinary lengths.
+target_test:
+  class_name: org.apache.commons.lang3.StringUtilsSubstringTest
+  method_name: testMid_String
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+expected_baseline_failure: test_failure
+agent_budgets: &budgets
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+allowed_file_policy:
+  production_java_only: true

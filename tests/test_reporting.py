@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from patchpilot.reporting import (
+from reposuture.reporting import (
     FinalStatus,
     RunReport,
     SanitizedTraceEvent,

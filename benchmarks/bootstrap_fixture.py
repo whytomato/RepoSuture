@@ -9,7 +9,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from patchpilot.process import ProcessRunner
+from reposuture.process import ProcessRunner
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_SOURCES = PROJECT_ROOT / "benchmarks" / "fixture-sources"
@@ -55,6 +55,7 @@ def _commit_fixture(runner: ProcessRunner, repository: Path, case_id: str) -> st
     _git(runner, repository, "init", "--quiet", "--initial-branch=main")
     _git(runner, repository, "config", "core.autocrlf", "false")
     _git(runner, repository, "config", "user.name", "PatchPilot Fixture")
+    # Preserve the published MVP commit identities and fingerprint from before the rename.
     _git(runner, repository, "config", "user.email", "fixture@patchpilot.invalid")
     _git(runner, repository, "add", "--force", "--all")
     _git(runner, repository, "update-index", "--chmod=+x", "mvnw")
@@ -104,7 +105,7 @@ def _import_case_commit(
     if source.parent != FIXTURE_SOURCES.resolve(strict=True) or not source.is_dir():
         raise RuntimeError(f"invalid fixture source directory: {source}")
     temporary_parent = Path(tempfile.gettempdir()).expanduser().resolve(strict=True)
-    temporary_root = temporary_parent / f"patchpilot-{case_id}-{uuid.uuid4().hex}"
+    temporary_root = temporary_parent / f"reposuture-{case_id}-{uuid.uuid4().hex}"
     temporary_root.mkdir()
     temporary_root = temporary_root.resolve(strict=True)
     if temporary_root.parent != temporary_parent:
@@ -133,14 +134,14 @@ def _import_case_commit(
             runner,
             repository,
             "update-ref",
-            f"refs/patchpilot-benchmarks/{case_id}",
+            f"refs/reposuture-benchmarks/{case_id}",
             actual,
         )
         return actual
     finally:
         resolved = temporary_root.resolve(strict=True)
         if resolved.parent != temporary_parent or not resolved.name.startswith(
-            f"patchpilot-{case_id}-"
+            f"reposuture-{case_id}-"
         ):
             raise RuntimeError("refusing to clean an unexpected fixture-build directory")
         for current, directory_names, file_names in os.walk(resolved, topdown=False):
@@ -177,7 +178,7 @@ def bootstrap_fixture(repository: Path) -> str:
         runner,
         repository,
         "update-ref",
-        "refs/patchpilot-benchmarks/null-input-validation",
+        "refs/reposuture-benchmarks/null-input-validation",
         actual,
     )
     for case_id in CASE_IDS[1:]:

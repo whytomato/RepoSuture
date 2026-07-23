@@ -1,5 +1,8 @@
 # Live pagination repair with Patch rejection and replanning
 
+> Generated under the former project name PatchPilot; the project was subsequently
+> renamed to RepoSuture.
+
 > **LIVE MODEL DEMONSTRATION**
 >
 > This is a sanitized replay of one genuine OpenRouter `z-ai/glm-5.2` run. It demonstrates

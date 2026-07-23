@@ -9,6 +9,7 @@ dist/
 .artifacts*
 patchpilot-worktrees/
 patchpilot-*/
+benchmarks/real_world/.cache/
 .coverage*
 htmlcov/
 target/

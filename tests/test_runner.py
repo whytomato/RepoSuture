@@ -6,10 +6,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-from patchpilot.process import ProcessResult, ProcessRunner
-from patchpilot.reporting import FinalStatus, TestOutcome
-from patchpilot.runner import verify_case
-from patchpilot.workspace import ArtifactContainmentError
+from reposuture.process import ProcessResult, ProcessRunner
+from reposuture.reporting import FinalStatus, TestOutcome
+from reposuture.runner import verify_case
+from reposuture.workspace import ArtifactContainmentError
 
 
 def run_git(runner: ProcessRunner, repository: Path, *arguments: str) -> str:
@@ -24,8 +24,8 @@ def create_case(tmp_path: Path) -> tuple[Path, Path, str]:
     repository.mkdir()
     runner = ProcessRunner()
     run_git(runner, repository, "init", "--quiet")
-    run_git(runner, repository, "config", "user.name", "PatchPilot Tests")
-    run_git(runner, repository, "config", "user.email", "patchpilot@example.invalid")
+    run_git(runner, repository, "config", "user.name", "RepoSuture Tests")
+    run_git(runner, repository, "config", "user.email", "reposuture@example.invalid")
     source = repository / "src/main/java/App.java"
     source.parent.mkdir(parents=True)
     source.write_text("old\n", encoding="utf-8")

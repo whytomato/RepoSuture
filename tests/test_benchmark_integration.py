@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from benchmarks.bootstrap_fixture import bootstrap_fixture
-from patchpilot.agent import (
+from reposuture.agent import (
     AgentMessage,
     AgentResponse,
     FakeLLM,
@@ -16,11 +16,11 @@ from patchpilot.agent import (
     ToolCall,
     ToolSpec,
 )
-from patchpilot.benchmark import run_benchmark, validate_benchmark
-from patchpilot.benchmark_reporting import BenchmarkExecutionMode
-from patchpilot.benchmark_spec import BenchmarkSuiteError, LoadedBenchmarkCase
-from patchpilot.process import ProcessRunner
-from patchpilot.reporting import FinalStatus, RunReport, TestOutcome
+from reposuture.benchmark import run_benchmark, validate_benchmark
+from reposuture.benchmark_reporting import BenchmarkExecutionMode
+from reposuture.benchmark_spec import BenchmarkSuiteError, LoadedBenchmarkCase
+from reposuture.process import ProcessRunner
+from reposuture.reporting import FinalStatus, RunReport, TestOutcome
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SUITE = PROJECT_ROOT / "benchmarks" / "suites" / "mvp.yaml"
@@ -93,7 +93,7 @@ def test_benchmark_entry_points_reject_artifacts_inside_fixture_before_writing(
     shutil.copytree(
         PROJECT_ROOT / "benchmarks",
         benchmark_root,
-        ignore=shutil.ignore_patterns(".git", "target", "__pycache__"),
+        ignore=shutil.ignore_patterns(".git", ".cache", "target", "__pycache__"),
     )
     repository = benchmark_root / "fixtures/null-email-repo"
     suite = benchmark_root / "suites/mvp.yaml"

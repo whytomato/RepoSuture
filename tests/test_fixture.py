@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 from benchmarks.bootstrap_fixture import EXPECTED_COMMIT, bootstrap_fixture
-from patchpilot.process import ProcessRunner
+from reposuture.process import ProcessRunner
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_SOURCE = PROJECT_ROOT / "benchmarks/fixtures/null-email-repo"

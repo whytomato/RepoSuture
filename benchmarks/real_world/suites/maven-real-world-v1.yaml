@@ -1,0 +1,35 @@
+schema_version: 1
+suite_id: maven-real-world-v1
+description: >-
+  Three locked real upstream Java/Maven defects from Apache Commons projects, reconstructed
+  from buggy commits plus upstream test-only overlays.
+default_runs_per_case: 1
+default_agent_budgets:
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+tags: [java, maven, real-world, deterministic, upstream]
+notes: >-
+  Upstream fix provenance and production Patches remain validation-only and are never
+  serialized into Agent prompts or tool observations.
+cases:
+  - id: commons-lang-mid-overflow
+    agent_case: ../cases/commons-lang-mid-overflow.yaml
+    validation_case: ../validation/commons-lang-mid-overflow.yaml
+    tags: [apache-commons-lang, boundary, two-production-files]
+  - id: commons-collections-int-value
+    agent_case: ../cases/commons-collections-int-value.yaml
+    validation_case: ../validation/commons-collections-int-value.yaml
+    tags: [apache-commons-collections, data-conversion, one-production-file]
+  - id: commons-collections-flat3map-entry
+    agent_case: ../cases/commons-collections-flat3map-entry.yaml
+    validation_case: ../validation/commons-collections-flat3map-entry.yaml
+    tags: [apache-commons-collections, collection-semantics, one-production-file]

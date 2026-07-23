@@ -1,18 +1,40 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SOURCE_ROOT = PROJECT_ROOT / "src"
 AUDITED_PYTHON_ROOTS = (SOURCE_ROOT, PROJECT_ROOT / "tests", PROJECT_ROOT / "benchmarks")
+IGNORED_GENERATED_DIRECTORIES = {
+    ".cache",
+    ".git",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "target",
+}
 
 
 def source_trees() -> list[tuple[Path, ast.AST]]:
+    paths: list[Path] = []
+    for root in AUDITED_PYTHON_ROOTS:
+        for directory, child_directories, filenames in os.walk(root, followlinks=False):
+            child_directories[:] = sorted(
+                name
+                for name in child_directories
+                if name not in IGNORED_GENERATED_DIRECTORIES
+            )
+            paths.extend(
+                Path(directory) / filename
+                for filename in sorted(filenames)
+                if filename.endswith(".py")
+            )
     return [
         (path, ast.parse(path.read_text(encoding="utf-8"), filename=str(path)))
-        for root in AUDITED_PYTHON_ROOTS
-        for path in sorted(root.rglob("*.py"))
+        for path in paths
     ]
 
 
@@ -81,7 +103,7 @@ def test_forbidden_frameworks_are_absent_and_openai_is_provider_isolated() -> No
 
     assert forbidden.isdisjoint(imported_roots)
     assert set(openai_source_imports) == {
-        SOURCE_ROOT / "patchpilot/models/openai_responses.py"
+        SOURCE_ROOT / "reposuture/models/openai_responses.py"
     }
     pyproject = (PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8").casefold()
     assert all(f'"{dependency}' not in pyproject for dependency in forbidden)

@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 from benchmarks.bootstrap_fixture import bootstrap_fixture
-from patchpilot.benchmark_spec import BenchmarkSuiteError, load_benchmark_suite
+from reposuture.benchmark_spec import BenchmarkSuiteError, load_benchmark_suite
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
@@ -20,7 +20,7 @@ def copied_benchmarks(tmp_path_factory: pytest.TempPathFactory) -> Path:
     shutil.copytree(
         PROJECT_ROOT / "benchmarks",
         destination,
-        ignore=shutil.ignore_patterns(".git", "target", "__pycache__"),
+        ignore=shutil.ignore_patterns(".git", ".cache", "target", "__pycache__"),
     )
     bootstrap_fixture(destination / "fixtures" / "null-email-repo")
     return destination
@@ -31,7 +31,7 @@ def _copy_suite(copied_benchmarks: Path, tmp_path: Path) -> Path:
     shutil.copytree(
         copied_benchmarks,
         destination,
-        ignore=shutil.ignore_patterns(".git", "target", "__pycache__"),
+        ignore=shutil.ignore_patterns(".git", ".cache", "target", "__pycache__"),
     )
     source_repository = copied_benchmarks / "fixtures" / "null-email-repo"
     destination_repository = destination / "fixtures" / "null-email-repo"

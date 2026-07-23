@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from patchpilot.patching import (
+from reposuture.patching import (
     FileClassification,
     PatchApplier,
     PatchFormatError,
@@ -13,7 +13,7 @@ from patchpilot.patching import (
     classify_file,
     inspect_patch,
 )
-from patchpilot.process import ProcessResult, ProcessRunner
+from reposuture.process import ProcessResult, ProcessRunner
 
 
 def initialize_repository(repository: Path, runner: ProcessRunner) -> None:
@@ -26,8 +26,8 @@ def initialize_repository(repository: Path, runner: ProcessRunner) -> None:
         assert result.exit_code == 0, result.stderr
 
     git("init", "--quiet")
-    git("config", "user.name", "PatchPilot Tests")
-    git("config", "user.email", "patchpilot@example.invalid")
+    git("config", "user.name", "RepoSuture Tests")
+    git("config", "user.email", "reposuture@example.invalid")
     source = repository / "src/main/java/App.java"
     source.parent.mkdir(parents=True)
     source.write_text("old\n", encoding="utf-8")

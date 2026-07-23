@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from patchpilot.case_spec import CaseValidationError, load_agent_case, load_case
+from reposuture.case_spec import CaseValidationError, load_agent_case, load_case
 
 
 def valid_case_data() -> dict[str, object]:

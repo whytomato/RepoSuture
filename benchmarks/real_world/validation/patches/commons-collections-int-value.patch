@@ -1,0 +1,13 @@
+diff --git a/src/main/java/org/apache/commons/collections4/MapUtils.java b/src/main/java/org/apache/commons/collections4/MapUtils.java
+index 3d8d7e18..6dc8c74e 100644
+--- a/src/main/java/org/apache/commons/collections4/MapUtils.java
++++ b/src/main/java/org/apache/commons/collections4/MapUtils.java
+@@ -738,7 +738,7 @@ public class MapUtils {
+      */
+     public static <K> int getIntValue(final Map<? super K, ?> map, final K key,
+             final Function<K, Integer> defaultFunction) {
+-        return applyDefaultFunction(map, key, MapUtils::getInteger, defaultFunction, 0).byteValue();
++        return applyDefaultFunction(map, key, MapUtils::getInteger, defaultFunction, 0).intValue();
+     }
+ 
+     /**

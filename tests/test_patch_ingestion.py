@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from patchpilot.patching import (
+from reposuture.patching import (
     PatchApplier,
     PatchErrorCode,
     PatchIngestionError,
@@ -12,7 +12,7 @@ from patchpilot.patching import (
     PatchValidationResult,
     normalize_model_patch,
 )
-from patchpilot.process import ProcessResult, ProcessRunner
+from reposuture.process import ProcessResult, ProcessRunner
 
 SOURCE_PATH = "src/main/java/example/Example.java"
 
@@ -55,8 +55,8 @@ def _repository(tmp_path: Path, runner: ProcessRunner | None = None) -> tuple[Pa
         candidate.write_text(content, encoding="utf-8")
     for command in (
         ["git", "init", "--quiet"],
-        ["git", "config", "user.name", "PatchPilot Tests"],
-        ["git", "config", "user.email", "patchpilot@example.invalid"],
+        ["git", "config", "user.name", "RepoSuture Tests"],
+        ["git", "config", "user.email", "reposuture@example.invalid"],
         ["git", "add", "."],
         ["git", "commit", "--quiet", "-m", "base"],
     ):

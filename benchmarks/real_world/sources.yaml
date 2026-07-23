@@ -1,0 +1,73 @@
+schema_version: 1
+retrieval_date: 2026-07-22
+cases:
+  - case_id: commons-lang-mid-overflow
+    source_slug: commons-lang
+    upstream_project: Apache Commons Lang
+    repository_url: https://github.com/apache/commons-lang.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-lang/blob/e6b8bbd39505694012d869fa2107ef068b88d800/LICENSE.txt
+    issue_url: https://github.com/apache/commons-lang/pull/1699
+    fix_pr_url: https://github.com/apache/commons-lang/pull/1699
+    buggy_commit: e6b8bbd39505694012d869fa2107ef068b88d800
+    fix_commit: 2240c1f93e5f96b12a83ec8615c29dfac46258e9
+    build_system: maven
+    module_path: .
+    target_test_selector: org.apache.commons.lang3.StringUtilsSubstringTest#testMid_String
+    production_paths:
+      - src/main/java/org/apache/commons/lang3/StringUtils.java
+      - src/main/java/org/apache/commons/lang3/text/StrBuilder.java
+    test_paths:
+      - src/test/java/org/apache/commons/lang3/StringUtilsSubstringTest.java
+      - src/test/java/org/apache/commons/lang3/text/StrBuilderTest.java
+    production_patch_sha256: 34c598d8da20e645ef40a9695002eb5e608586e38244f2805064bace691a931d
+    test_overlay_sha256: f15c582dc975b4725217f3da397aa148c69b648c43763c15d311a01f7493219f
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-03-01T00:00:00+00:00
+
+  - case_id: commons-collections-int-value
+    source_slug: commons-collections
+    upstream_project: Apache Commons Collections
+    repository_url: https://github.com/apache/commons-collections.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-collections/blob/b219ccbe7b95250abd3ba3143edf340b7fad1943/LICENSE.txt
+    issue_url: https://github.com/apache/commons-collections/pull/704
+    fix_pr_url: https://github.com/apache/commons-collections/pull/704
+    buggy_commit: b219ccbe7b95250abd3ba3143edf340b7fad1943
+    fix_commit: 6171ecbb1dc89f3e2d3bae659b6364995fbc6027
+    build_system: maven
+    module_path: .
+    target_test_selector: org.apache.commons.collections4.MapUtilsTest#testGetIntValue
+    production_paths:
+      - src/main/java/org/apache/commons/collections4/MapUtils.java
+    test_paths:
+      - src/test/java/org/apache/commons/collections4/MapUtilsTest.java
+    production_patch_sha256: 69e3e4ae9bbd07a7f7b0e0c57c343c063ac8d9dbb4653c7eed5a64ed7d3348ad
+    test_overlay_sha256: 73fff2c610d23809260b563c2a9c28a5e50ca0f2eff939f1c82876e6cf6672ba
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-03-02T00:00:00+00:00
+
+  - case_id: commons-collections-flat3map-entry
+    source_slug: commons-collections
+    upstream_project: Apache Commons Collections
+    repository_url: https://github.com/apache/commons-collections.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-collections/blob/68a3c306d81dffe5bad59443dba3a7f5513178f4/LICENSE.txt
+    issue_url: https://github.com/apache/commons-collections/pull/714
+    fix_pr_url: https://github.com/apache/commons-collections/pull/714
+    buggy_commit: 68a3c306d81dffe5bad59443dba3a7f5513178f4
+    fix_commit: 14375bdba38421c174d646c40b8b757cce52dd45
+    build_system: maven
+    module_path: .
+    target_test_selector: org.apache.commons.collections4.map.Flat3MapTest#testEntrySetRemoveChecksValue
+    production_paths:
+      - src/main/java/org/apache/commons/collections4/map/Flat3Map.java
+    test_paths:
+      - src/test/java/org/apache/commons/collections4/map/Flat3MapTest.java
+    production_patch_sha256: 22db7928cdfe413e41b2087439564023f2e47ba7b1074888d96f9f510af60f8a
+    test_overlay_sha256: 18a23c294e73117dedf20f8cefb1380840203fda73a249798cbd638eb8139e17
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-03-03T00:00:00+00:00

@@ -1,7 +1,7 @@
 schema_version: 1
 suite_id: mvp
 description: >-
-  Six small deterministic Java 17 Maven defects used to evaluate PatchPilot repair runs.
+  Six small deterministic Java 17 Maven defects used to evaluate RepoSuture repair runs.
 default_runs_per_case: 1
 default_agent_budgets:
   max_model_turns: 12

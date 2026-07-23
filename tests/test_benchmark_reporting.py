@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from patchpilot.benchmark import benchmark_exit_code
-from patchpilot.benchmark_reporting import (
+from reposuture.benchmark import benchmark_exit_code
+from reposuture.benchmark_reporting import (
     BenchmarkExecutionMode,
     BenchmarkRunRecord,
     FailureCategory,
@@ -16,8 +16,8 @@ from patchpilot.benchmark_reporting import (
     aggregate_benchmark_runs,
     write_benchmark_summary,
 )
-from patchpilot.benchmark_spec import BenchmarkFingerprint
-from patchpilot.reporting import FinalStatus, TestOutcome
+from reposuture.benchmark_spec import BenchmarkFingerprint
+from reposuture.reporting import FinalStatus, TestOutcome
 
 HASH = "a" * 64
 
@@ -38,8 +38,8 @@ def _reproducibility(
 ) -> ReproducibilityMetadata:
     provider = "scripted" if mode is BenchmarkExecutionMode.SCRIPTED_OFFLINE else "openai"
     return ReproducibilityMetadata(
-        patchpilot_git_commit="c" * 40,
-        patchpilot_worktree_dirty=False,
+        project_git_commit="c" * 40,
+        project_worktree_dirty=False,
         operating_system="Test OS",
         python_version="3.11.15",
         java_version='openjdk version "17"',

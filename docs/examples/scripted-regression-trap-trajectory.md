@@ -1,5 +1,8 @@
 # SCRIPTED PROVIDER DEMONSTRATION
 
+> Generated under the former project name PatchPilot; the project was subsequently
+> renamed to RepoSuture.
+
 > This is a deterministic scripted-provider demonstration generated from a real PatchPilot
 > run on 2026-07-22. Git worktree creation, both Patch transactions, Maven, JUnit, the target
 > test, regression suites, candidate rollback, and artifact verification all executed for

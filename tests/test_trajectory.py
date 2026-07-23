@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from patchpilot.reporting import SanitizedTraceEvent
-from patchpilot.trajectory import LiveTrajectoryRenderer, TrajectoryView, render_trajectory_text
+from reposuture.reporting import SanitizedTraceEvent
+from reposuture.trajectory import LiveTrajectoryRenderer, TrajectoryView, render_trajectory_text
 
 NOW = datetime(2026, 7, 22, 0, 0, tzinfo=UTC)
 RUN_ID = "run-trajectory"
@@ -34,7 +34,7 @@ def test_compact_trajectory_renders_agent_actions_observations_and_verification(
             1,
             "worktree_created",
             "OK",
-            {"base_commit": "a" * 40, "worktree_name": "patchpilot-safe"},
+            {"base_commit": "a" * 40, "worktree_name": "reposuture-safe"},
         ),
         _event(
             2,

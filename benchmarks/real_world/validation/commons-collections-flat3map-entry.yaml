@@ -1,0 +1,16 @@
+schema_version: 1
+id: commons-collections-flat3map-entry
+repository: ../.cache/fixtures/commons-collections-flat3map-entry
+base_commit: 91353691e7f1ff57b9127ef640adc2a79d8f3d6e
+issue_title: Entry-set removal ignores the entry value
+issue_description: >-
+  Removing a map entry through the entry-set view currently removes an item when only its
+  key matches. Removal must require both the key and value to match while preserving normal
+  removal behavior for an exact entry.
+target_test:
+  class_name: org.apache.commons.collections4.map.Flat3MapTest
+  method_name: testEntrySetRemoveChecksValue
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+golden_patch: patches/commons-collections-flat3map-entry.patch
+expected_baseline_failure: test_failure

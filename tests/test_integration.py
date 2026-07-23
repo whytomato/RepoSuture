@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from patchpilot.process import ProcessResult, ProcessRunner
-from patchpilot.reporting import FinalStatus, TestOutcome
-from patchpilot.runner import verify_case
+from reposuture.process import ProcessResult, ProcessRunner
+from reposuture.reporting import FinalStatus, TestOutcome
+from reposuture.runner import verify_case
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 FIXTURE_SOURCE = PROJECT_ROOT / "benchmarks/fixtures/null-email-repo"
@@ -39,8 +39,8 @@ def initialize_fixture_repository(tmp_path: Path) -> tuple[Path, str]:
     runner = ProcessRunner()
     git(runner, repository, "init", "--quiet", "--initial-branch=main")
     git(runner, repository, "config", "core.autocrlf", "false")
-    git(runner, repository, "config", "user.name", "PatchPilot Tests")
-    git(runner, repository, "config", "user.email", "patchpilot@example.invalid")
+    git(runner, repository, "config", "user.name", "RepoSuture Tests")
+    git(runner, repository, "config", "user.email", "reposuture@example.invalid")
     git(runner, repository, "add", "--all")
     git(runner, repository, "update-index", "--chmod=+x", "mvnw")
     git(runner, repository, "commit", "--quiet", "-m", "fixture base")

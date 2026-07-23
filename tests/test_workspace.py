@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from patchpilot.process import ProcessResult, ProcessRunner
-from patchpilot.workspace import (
+from reposuture.process import ProcessResult, ProcessRunner
+from reposuture.workspace import (
     ArtifactContainmentError,
     GitWorktree,
     OriginalRepositoryChangedError,
@@ -31,8 +31,8 @@ def create_repository(tmp_path: Path, runner: ProcessRunner) -> tuple[Path, str]
     repository = tmp_path / "repository"
     repository.mkdir()
     run_git(runner, repository, "init", "--quiet")
-    run_git(runner, repository, "config", "user.name", "PatchPilot Tests")
-    run_git(runner, repository, "config", "user.email", "patchpilot@example.invalid")
+    run_git(runner, repository, "config", "user.name", "RepoSuture Tests")
+    run_git(runner, repository, "config", "user.email", "reposuture@example.invalid")
     (repository / "source.txt").write_text("original\n", encoding="utf-8")
     run_git(runner, repository, "add", "source.txt")
     run_git(runner, repository, "commit", "--quiet", "-m", "base")
@@ -404,13 +404,13 @@ def test_worktrees_root_inside_original_repository_is_rejected(tmp_path: Path) -
         repository=repository,
         base_commit=commit,
         runner=runner,
-        worktrees_root=repository / ".patchpilot-worktrees",
+        worktrees_root=repository / ".reposuture-worktrees",
     )
 
     with pytest.raises(WorkspaceError, match="outside the original repository"), manager:
         pass
 
-    assert not (repository / ".patchpilot-worktrees").exists()
+    assert not (repository / ".reposuture-worktrees").exists()
 
 
 def test_git_worktree_can_be_kept_for_debugging(tmp_path: Path) -> None:

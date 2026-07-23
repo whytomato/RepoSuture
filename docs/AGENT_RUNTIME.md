@@ -1,6 +1,6 @@
-# PatchPilot Agent Runtime
+# RepoSuture Agent Runtime
 
-PatchPilot is a single, test-grounded software engineering Agent for bounded Java/Maven
+RepoSuture is a single, test-grounded software engineering Agent for bounded Java/Maven
 bug repair. The model chooses actions; the environment owns isolation, policy, execution,
 rollback, evidence, budgets, and the final status.
 
@@ -54,12 +54,12 @@ worktree, decide that a test passed, or set `RESOLVED`. Responses API continuati
 provider-independent through `LLMClient`; stateless providers receive the complete required
 conversation on each request.
 
-PatchPilot requests one tool action per model turn. If an OpenAI-compatible endpoint returns
+RepoSuture requests one tool action per model turn. If an OpenAI-compatible endpoint returns
 multiple function calls despite `parallel_tool_calls=false`, the adapter retains the first
 call and the provider output prefix required for it, excludes the unexecuted calls from
 stateless continuation, and records `provider_tool_calls_sequentialized` with only bounded
 counts. The first real observation must return to the model before it can choose another
-action; PatchPilot never silently batch-executes the extra calls.
+action; RepoSuture never silently batch-executes the extra calls.
 
 The environment validates tool schemas, paths, symlink/reparse containment, allowed file
 classes, Patch structure and Git applicability. It executes all subprocesses with argument
@@ -73,7 +73,7 @@ evidence counts. Target PASS triggers the full regression suite. Both PASS resul
 unchanged verified diff, original-repository integrity, worktree cleanup, and artifact
 integrity are required for `RESOLVED`.
 
-When the target or regression suite fails and budget remains, PatchPilot restores the
+When the target or regression suite fails and budget remains, RepoSuture restores the
 candidate transaction, verifies that the worktree diff is empty, and returns bounded
 failure evidence to the Agent. The next model request is preceded by an
 `agent_replan_requested` event with public reasons such as `PATCH_REJECTED`,
@@ -95,7 +95,7 @@ timestamp, event type, status, optional duration, run id, and bounded sanitized 
 The optional live observer receives exactly the already-sanitized event written to disk.
 If rendering raises, the observer is disabled and Agent execution continues unchanged.
 
-`patchpilot repair --trace-view compact|verbose|off` presents the event stream while the run
+`reposuture repair --trace-view compact|verbose|off` presents the event stream while the run
 executes. The formatter describes requested actions and returned evidence; it never says
 that the Agent "thought" something.
 
@@ -104,7 +104,7 @@ public goal, event-derived timeline, deterministic verification evidence, counte
 and final status. A successful document refers to `final.patch` by artifact-relative name
 and SHA-256 rather than embedding it.
 
-`patchpilot replay-run PATH` accepts a run directory, `report.json`, or `trace.jsonl`. It
+`reposuture replay-run PATH` accepts a run directory, `report.json`, or `trace.jsonl`. It
 validates both schemas, sequence ordering, run ids, final-status consistency, path
 containment, artifact sizes, and hashes. Replay performs no model request, Git mutation,
 Maven execution, or network request. Text and Markdown replay use the same semantic event
@@ -119,12 +119,12 @@ matching local identity evidence; traversal and symlink/junction escape remain i
 
 The current scope has one decision maker, six local tools, a bounded synchronous loop, and
 one deterministic verifier. A multi-agent framework would add coordination state without
-changing the correctness oracle or the required behavior. PatchPilot keeps the provider
+changing the correctness oracle or the required behavior. RepoSuture keeps the provider
 boundary small and the runtime directly testable.
 
 ## Hidden reasoning policy
 
-PatchPilot does not request, store, render, or reconstruct hidden chain-of-thought.
+RepoSuture does not request, store, render, or reconstruct hidden chain-of-thought.
 Provider-internal reasoning items required for protocol continuation may remain in memory,
 but are not written to reports, traces, trajectories, or CLI output. Reasoning token counts
 may be recorded when the provider exposes them. Raw Patch bodies, complete source files,

@@ -1,4 +1,4 @@
-# PatchPilot Java Bug Benchmark
+# RepoSuture Java Bug Benchmark
 
 ## Purpose and boundary
 
@@ -15,7 +15,7 @@ The benchmark has two mutually exclusive execution modes:
 - `live model` uses the configured provider and a fresh model conversation for every
   attempt. Only results from a command actually run in this mode are live results.
 
-A single aggregate can contain only one mode. PatchPilot rejects any attempt to mix
+A single aggregate can contain only one mode. RepoSuture rejects any attempt to mix
 scripted and live records in one summary.
 
 ## MVP cases
@@ -48,7 +48,7 @@ runs, default Agent budgets, tags, optional harness-only notes, and an ordered C
 list. Duplicate ids, missing files, unknown fields, invalid commits, escaped paths, and
 public/hidden metadata disagreements invalidate the suite.
 
-Each entry links three deliberately separate schemas:
+MVP entries link three deliberately separate schemas:
 
 1. `benchmarks/cases/<id>.yaml` is the schema-v2 Agent Case. It contains only the issue,
    target selector, fixed repository/commit, budgets, and allowed-file policy.
@@ -56,6 +56,9 @@ Each entry links three deliberately separate schemas:
    fields and points to a hidden golden Patch.
 3. `benchmarks/scripted/<id>.yaml` is harness-only deterministic action data for offline
    tests. It is not an Agent Case and is never serialized into a provider prompt.
+
+The scripted reference is explicitly optional. Real-world Cases omit it rather than
+shipping golden scripted Agent actions that could be mistaken for capability evidence.
 
 The loader requires every public Agent field to equal the corresponding validation
 field. The golden Patch must be outside the Agent repository. Only the public Agent Case
@@ -83,7 +86,7 @@ Bootstrap the deterministic fixture repository, then validate all six Cases:
 ```powershell
 python benchmarks/bootstrap_fixture.py
 
-patchpilot validate-benchmark benchmarks/suites/mvp.yaml `
+reposuture validate-benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-validation
 ```
 
@@ -116,7 +119,7 @@ consume paid API quota:
 $env:OPENAI_API_KEY = "<your-api-key>"
 $env:PATCHPILOT_MODEL = "<your-model-name>"
 
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-live `
   --provider openai `
   --runs-per-case 1
@@ -126,7 +129,7 @@ The offline orchestration check requires no API key or network access after Mave
 dependencies are cached:
 
 ```powershell
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-scripted `
   --provider scripted `
   --runs-per-case 1
@@ -155,6 +158,64 @@ The aggregate artifacts are:
 Artifact roots are never overwritten when aggregate files already exist. Choose a new
 directory for a new run so prior evidence remains reproducible.
 
+## Cross-model benchmark matrix
+
+`benchmark-matrix` schedules the existing `repair_case` implementation; it does not contain
+a second Agent loop. At least two explicit model identifiers are required. For Release 0.3:
+
+```powershell
+reposuture benchmark-matrix benchmarks/suites/mvp.yaml `
+  --artifacts-dir .artifacts-matrix-r3 `
+  --provider openai `
+  --model z-ai/glm-5.2 `
+  --model openai/gpt-5-mini `
+  --runs-per-case 3 `
+  --schedule interleaved --dry-run
+```
+
+The dry run performs no model request and creates no artifact. It reports the complete
+deterministic schedule and exactly `6 Cases x 3 runs x 2 models = 36 live attempts`.
+Execution is sequential and alternates model order across Cases/runs. Both models receive
+the same source commit, fingerprint, public issue, prompt, tool schemas, budgets, timeouts,
+endpoint, policy, and verifier. Every item has its own conversation, worktree, deterministic
+model-bound run id, and model-specific artifact directory.
+
+The root contains `matrix-plan.json`, `matrix-summary.json`, `matrix-runs.csv`, and
+`matrix-report.md`. Each model directory also contains the ordinary three benchmark aggregate
+files, so model records are never mixed. Reports include generated/executed/discarded tool
+calls, discard rate, normalization/recount use, tokens, latency, tests, Patch size, failure
+taxonomy, per-Case success counts, and a descriptive 95% Wilson interval. The interval is not
+pass@k and three attempts per Case do not establish statistical significance.
+
+`--resume` accepts only complete live observations from the identical plan. The project
+commit, clean flag, suite/fingerprint, Case/run/model/provider, budgets, deterministic run id,
+report schema, terminal status, report/trace hashes, and every artifact size/SHA must match.
+A complete failed run is retained as an empirical observation. Dirty, scripted, partial,
+tampered, different-commit, different-model, or different-fingerprint data is rejected;
+aggregate summaries are never trusted as resume authority.
+
+When no `--model` is supplied, the compatibility variables `PATCHPILOT_MODEL` and
+`PATCHPILOT_COMPARISON_MODEL` are used; comparison defaults to `openai/gpt-5-mini`. Exact
+model ids are always written to the plan and reports.
+
+## Real-world suite
+
+`benchmarks/real_world/suites/maven-real-world-v1.yaml` is separate from the six synthetic
+MVP Cases. It has exactly three fixed upstream Apache bugs across Commons Lang and Commons
+Collections, no scripted solutions, and the same deterministic validation, fingerprint,
+single-model benchmark, and matrix interfaces. Bootstrap and validate it explicitly:
+
+```powershell
+python benchmarks/real_world/bootstrap_real_world.py
+reposuture validate-benchmark benchmarks/real_world/suites/maven-real-world-v1.yaml `
+  --artifacts-dir .artifacts-real-validation
+```
+
+Clones and generated fixture repositories stay under ignored `.cache/`; default pytest/CI
+does not fetch them. Full provenance, license treatment, test-only overlay proof, hidden-fix
+separation, candidate decisions, and the manual no-model validation workflow are documented
+in [`REAL_WORLD_BENCHMARK.md`](REAL_WORLD_BENCHMARK.md).
+
 ## Agent trajectory and replay
 
 Each scripted or live Agent attempt derives `trajectory.md` from its sanitized
@@ -168,10 +229,10 @@ Replay one successful or failed benchmark attempt without a provider, network, G
 or Maven execution:
 
 ```powershell
-patchpilot replay-run .artifacts-benchmark-scripted/runs/<run-id> `
+reposuture replay-run .artifacts-benchmark-scripted/runs/<run-id> `
   --view verbose --format text --no-color
 
-patchpilot replay-run .artifacts-benchmark-scripted/runs/<run-id>/trace.jsonl `
+reposuture replay-run .artifacts-benchmark-scripted/runs/<run-id>/trace.jsonl `
   --view verbose --format markdown `
   --output .artifacts-benchmark-scripted-replay.md --no-color
 ```
@@ -209,7 +270,7 @@ Patch-ingestion interface, runs from a committed clean tree, and writes a fresh 
 root. A post-change outcome is reported only after the command actually runs:
 
 ```powershell
-patchpilot benchmark benchmarks/suites/mvp.yaml `
+reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-openrouter-smoke-m4a `
   --provider openai `
   --case null-input-validation `
@@ -217,7 +278,7 @@ patchpilot benchmark benchmarks/suites/mvp.yaml `
   --max-patch-attempts 2
 ```
 
-For model input, PatchPilot first computes the raw SHA-256, then applies only newline
+For model input, RepoSuture first computes the raw SHA-256, then applies only newline
 normalization, UTF-8 BOM removal, whole-argument Patch-fence removal, outer blank-line
 removal, and exactly one final newline. It may synthesize one `diff --git` header only
 when exactly one matching `--- a/<path>` / `+++ b/<path>` pair names the same existing
@@ -328,7 +389,7 @@ or more invalid Cases.
 
 ## Reproducibility and secrets
 
-Summaries record the PatchPilot Git commit and dirty flag, benchmark fingerprint, OS,
+Summaries record the RepoSuture Git commit and dirty flag, benchmark fingerprint, OS,
 Python, Java, pinned Maven/Wrapper version, OpenAI SDK version when relevant, provider,
 model, UTC timestamp, CLI arguments, effective budgets, and optional seed metadata.
 They never record API keys, authorization headers, complete environment variables,

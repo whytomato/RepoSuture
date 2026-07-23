@@ -1,4 +1,4 @@
-# PatchPilot Engineering Rules
+# RepoSuture Engineering Rules
 
 - Never use `shell=True`.
 - Every subprocess must use an argument array, an explicit `cwd`, a timeout, and return a structured result.
