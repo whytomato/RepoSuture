@@ -35,6 +35,10 @@ JUnit、目标测试、完整回归和仓库完整性检查。模型的文字声
 [`docs/results/openrouter-glm-5.2-live-r1.md`](docs/results/openrouter-glm-5.2-live-r1.md)；
 真实 Patch 拒绝 → REPLAN 示例见
 [`docs/examples/live-pagination-replan-trajectory.md`](docs/examples/live-pagination-replan-trajectory.md)。
+Release 0.3 的重复两模型 MVP 结果见
+[`docs/results/reposuture-mvp-two-model-r3.md`](docs/results/reposuture-mvp-two-model-r3.md)，
+真实上游 Java Bug 结果见
+[`docs/results/reposuture-real-world-r1.md`](docs/results/reposuture-real-world-r1.md)。
 
 ```mermaid
 stateDiagram-v2
@@ -118,16 +122,23 @@ reposuture benchmark-matrix benchmarks/suites/mvp.yaml `
 两个模型使用同一 commit、benchmark fingerprint、Case 文本、工具 schema、预算、timeout、
 Patch policy、endpoint 和测试 oracle；只有 model id 不同。矩阵报告提供逐尝试/逐 Case 结果、
 描述性 95% Wilson 区间、工具协议丢弃率、tokens、latency 和失败 taxonomy。三次尝试仍是小样本，
-比较是描述性的，不宣称统计显著性。Release 0.3 的最终已清洗结果将在真实 36 次运行后链接，
-不会预先编造。
+比较是描述性的，不宣称统计显著性。Release 0.3 实际完成了固定的 36 次 live 尝试：
+`z-ai/glm-5.2` 为 18/18 `RESOLVED`，描述性 Wilson 95% 区间为 [0.824, 1.000]；
+`openai/gpt-5-mini` 的 18 次请求都在产生工具调用前被上游以 provider Terms of Service 403
+拒绝，记录为 0/18 `MODEL_API_ERROR`。因此这不是有效的修复能力胜负比较，也没有补跑失败样本。
+完整逐次证据和限制见
+[`reposuture-mvp-two-model-r3.md`](docs/results/reposuture-mvp-two-model-r3.md)。
 
 ## Real-world benchmark
 
 独立的 `maven-real-world-v1` 套件锁定三条真实 Apache Java/Maven bug（Commons Lang 1 条、
 Commons Collections 2 条），覆盖溢出边界、数值转换和集合语义；其中一条涉及两个生产实现。
 完整第三方仓库只存在于忽略缓存。设计、上游 URL、许可证、筛选理由和 bootstrap 命令见
-[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。真实两模型结果仅在实际完成
-`3 Cases x 1 run x 2 models = 6 attempts` 后发布。
+[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。固定的
+`3 Cases x 1 run x 2 models = 6 attempts` 已真实完成：GLM 5.2 解决 2/3，其中未解决的
+Commons Lang 尝试真实经历目标 PASS、回归 FAIL、回滚和重规划后耗尽预算；GPT-5 Mini 的
+三次请求仍被相同的上游 403 拒绝。完整结果见
+[`reposuture-real-world-r1.md`](docs/results/reposuture-real-world-r1.md)。
 
 ## Renamed from PatchPilot
 

@@ -1,0 +1,167 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "reposuture-mvp-two-model-r3",
+  "evaluation_timestamp_utc": "2026-07-24T08:30:38.559463Z",
+  "project_git_commit": "6f0ced786524c7e4f3514a284b826eac9865bcac",
+  "project_worktree_dirty": false,
+  "execution_mode": "live model",
+  "provider": "OpenRouter-compatible Responses API",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "suite_id": "mvp",
+  "benchmark_fingerprint": "2db5511043823b94edbeaa0fd7fc84dc9543fe59093ec8ce27f0f8c612973d4f",
+  "runs_per_case_per_model": 3,
+  "total_attempts": 36,
+  "schedule": "deterministic sequential interleaving",
+  "statistical_note": "This is not pass@k. Three attempts per Case remain a small sample, comparisons are descriptive, and the result does not establish universal Java repair capability.",
+  "catalog_snapshot": {
+    "retrieved_at_utc": "2026-07-24T09:22:10Z",
+    "models": [
+      {
+        "id": "z-ai/glm-5.2",
+        "context_tokens": 1000000,
+        "input_price_per_million_tokens_usd": 0.7553,
+        "output_price_per_million_tokens_usd": 2.374
+      },
+      {
+        "id": "openai/gpt-5-mini",
+        "context_tokens": 400000,
+        "input_price_per_million_tokens_usd": 0.25,
+        "output_price_per_million_tokens_usd": 2.0
+      }
+    ],
+    "cost_calculated": false
+  },
+  "models": [
+    {
+      "model": "z-ai/glm-5.2",
+      "attempts": 18,
+      "resolved_attempts": 18,
+      "empirical_resolution_rate": 1.0,
+      "descriptive_wilson_95": {
+        "lower": 0.8241207763533425,
+        "upper": 1.0
+      },
+      "cases_resolved_at_least_once": 6,
+      "cases_resolved_all_three": 6,
+      "baseline_reproduction_count": 18,
+      "target_test_pass_count": 18,
+      "regression_pass_count": 18,
+      "model_turns": 88,
+      "model_requests": 88,
+      "api_errors": 0,
+      "tool_calls": {
+        "generated": 125,
+        "executed": 88,
+        "discarded": 37,
+        "discard_rate": 0.296,
+        "by_name": {
+          "apply_patch": 20,
+          "list_files": 10,
+          "read_file": 39,
+          "search_code": 19
+        }
+      },
+      "patch_attempts": 20,
+      "rejected_patch_attempts": 2,
+      "normalization_used_attempts": 0,
+      "recount_used_attempts": 8,
+      "tokens": {
+        "input": 202373,
+        "output": 7999,
+        "reasoning": 3988
+      },
+      "average_model_latency_seconds": 65.67297842222008,
+      "average_test_duration_seconds": 13.882944444445052,
+      "average_wall_clock_duration_seconds": 80.75255555555526,
+      "average_patch_size_bytes": 573.3888888888889,
+      "original_repository_integrity_count": 18,
+      "failure_counts": {
+        "RESOLVED": 18
+      }
+    },
+    {
+      "model": "openai/gpt-5-mini",
+      "attempts": 18,
+      "resolved_attempts": 0,
+      "empirical_resolution_rate": 0.0,
+      "descriptive_wilson_95": {
+        "lower": 0.0,
+        "upper": 0.17587922364665765
+      },
+      "cases_resolved_at_least_once": 0,
+      "cases_resolved_all_three": 0,
+      "baseline_reproduction_count": 18,
+      "target_test_pass_count": 0,
+      "regression_pass_count": 0,
+      "model_turns": 18,
+      "model_requests": 18,
+      "api_errors": 18,
+      "tool_calls": {
+        "generated": 0,
+        "executed": 0,
+        "discarded": 0,
+        "discard_rate": 0.0,
+        "by_name": {}
+      },
+      "patch_attempts": 0,
+      "rejected_patch_attempts": 0,
+      "normalization_used_attempts": 0,
+      "recount_used_attempts": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0
+      },
+      "average_model_latency_seconds": 0.0,
+      "average_test_duration_seconds": 4.7481666666669,
+      "average_wall_clock_duration_seconds": 6.091055555555714,
+      "average_patch_size_bytes": 0.0,
+      "original_repository_integrity_count": 18,
+      "failure_counts": {
+        "MODEL_API": 18
+      },
+      "bounded_failure_reason": "The upstream provider rejected each request with HTTP 403 for provider Terms of Service before any tool call."
+    }
+  ],
+  "per_case_attempt_statuses": [
+    {
+      "case_id": "null-input-validation",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    },
+    {
+      "case_id": "pagination-boundary",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    },
+    {
+      "case_id": "status-filtering",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    },
+    {
+      "case_id": "shipping-eligibility",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    },
+    {
+      "case_id": "country-code-normalization",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    },
+    {
+      "case_id": "quota-regression-trap",
+      "z-ai/glm-5.2": ["RESOLVED", "RESOLVED", "RESOLVED"],
+      "openai/gpt-5-mini": ["MODEL_API_ERROR", "MODEL_API_ERROR", "MODEL_API_ERROR"]
+    }
+  ],
+  "integrity": {
+    "reports_checked": 36,
+    "strict_resume_observations_reused": 36,
+    "active_worktrees_after_run": 0,
+    "original_repositories_unchanged": 36,
+    "exact_api_key_matches": 0,
+    "authorization_header_matches": 0,
+    "agent_visible_hidden_metadata_matches": 0
+  }
+}

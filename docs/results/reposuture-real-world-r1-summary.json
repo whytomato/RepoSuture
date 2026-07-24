@@ -1,0 +1,250 @@
+{
+  "schema_version": 1,
+  "evaluation_id": "reposuture-real-world-r1",
+  "evaluation_timestamp_utc": "2026-07-24T09:17:48.356746Z",
+  "project_git_commit": "6f0ced786524c7e4f3514a284b826eac9865bcac",
+  "project_worktree_dirty": false,
+  "execution_mode": "live model",
+  "provider": "OpenRouter-compatible Responses API",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "models": ["z-ai/glm-5.2", "openai/gpt-5-mini"],
+  "suite_id": "maven-real-world-v1",
+  "benchmark_fingerprint": "345839d264b3b5c144fa8f9bbc75b419d917a4c0266d80c119c3dfb34ec19e82",
+  "runs_per_case_per_model": 1,
+  "total_attempts": 6,
+  "schedule": "deterministic sequential interleaving",
+  "statistical_note": "One attempt per Case/model is a smoke-level empirical observation, not pass@k, not statistically robust, and not evidence of broad real-world Java repair capability.",
+  "provenance": [
+    {
+      "case_id": "commons-lang-mid-overflow",
+      "upstream_project": "Apache Commons Lang",
+      "issue_url": "https://github.com/apache/commons-lang/pull/1699",
+      "license": "Apache-2.0",
+      "buggy_commit": "e6b8bbd39505694012d869fa2107ef068b88d800",
+      "fix_commit": "2240c1f93e5f96b12a83ec8615c29dfac46258e9"
+    },
+    {
+      "case_id": "commons-collections-int-value",
+      "upstream_project": "Apache Commons Collections",
+      "issue_url": "https://github.com/apache/commons-collections/pull/704",
+      "license": "Apache-2.0",
+      "buggy_commit": "b219ccbe7b95250abd3ba3143edf340b7fad1943",
+      "fix_commit": "6171ecbb1dc89f3e2d3bae659b6364995fbc6027"
+    },
+    {
+      "case_id": "commons-collections-flat3map-entry",
+      "upstream_project": "Apache Commons Collections",
+      "issue_url": "https://github.com/apache/commons-collections/pull/714",
+      "license": "Apache-2.0",
+      "buggy_commit": "68a3c306d81dffe5bad59443dba3a7f5513178f4",
+      "fix_commit": "14375bdba38421c174d646c40b8b757cce52dd45"
+    }
+  ],
+  "model_aggregates": [
+    {
+      "model": "z-ai/glm-5.2",
+      "attempts": 3,
+      "resolved_attempts": 2,
+      "empirical_resolution_rate": 0.6666666666666666,
+      "descriptive_wilson_95": {
+        "lower": 0.2076596008020477,
+        "upper": 0.9385080552796037
+      },
+      "cases_resolved_at_least_once": 2,
+      "baseline_reproduction_count": 3,
+      "target_test_pass_count": 3,
+      "regression_pass_count": 2,
+      "model_turns": 27,
+      "model_requests": 27,
+      "api_errors": 0,
+      "tool_calls": {
+        "generated": 28,
+        "executed": 27,
+        "discarded": 1,
+        "discard_rate": 0.03571428571428571,
+        "by_name": {
+          "apply_patch": 6,
+          "list_files": 1,
+          "read_file": 9,
+          "run_target_test": 1,
+          "search_code": 10
+        }
+      },
+      "patch_attempts": 6,
+      "rejected_patch_attempts": 2,
+      "normalization_used_attempts": 0,
+      "recount_used_attempts": 1,
+      "tokens": {
+        "input": 218835,
+        "output": 14510,
+        "reasoning": 14504
+      },
+      "average_model_latency_seconds": 288.2944687666629,
+      "average_test_duration_seconds": 489.7500000000073,
+      "average_wall_clock_duration_seconds": 792.6773333333331,
+      "average_patch_size_bytes": 788.6666666666666,
+      "failure_counts": {
+        "RESOLVED": 2,
+        "SEARCH_FAILURE": 1
+      }
+    },
+    {
+      "model": "openai/gpt-5-mini",
+      "attempts": 3,
+      "resolved_attempts": 0,
+      "empirical_resolution_rate": 0.0,
+      "descriptive_wilson_95": {
+        "lower": 0.0,
+        "upper": 0.5614970317550454
+      },
+      "cases_resolved_at_least_once": 0,
+      "baseline_reproduction_count": 3,
+      "target_test_pass_count": 0,
+      "regression_pass_count": 0,
+      "model_turns": 3,
+      "model_requests": 3,
+      "api_errors": 3,
+      "tool_calls": {
+        "generated": 0,
+        "executed": 0,
+        "discarded": 0,
+        "discard_rate": 0.0,
+        "by_name": {}
+      },
+      "patch_attempts": 0,
+      "rejected_patch_attempts": 0,
+      "normalization_used_attempts": 0,
+      "recount_used_attempts": 0,
+      "tokens": {
+        "input": 0,
+        "output": 0,
+        "reasoning": 0
+      },
+      "average_model_latency_seconds": 0.0,
+      "average_test_duration_seconds": 61.52099999999822,
+      "average_wall_clock_duration_seconds": 70.92166666666647,
+      "average_patch_size_bytes": 0.0,
+      "failure_counts": {
+        "MODEL_API": 3
+      },
+      "bounded_failure_reason": "The upstream provider rejected each request with HTTP 403 for provider Terms of Service before any tool call."
+    }
+  ],
+  "attempts": [
+    {
+      "sequence": 1,
+      "model": "openai/gpt-5-mini",
+      "case_id": "commons-lang-mid-overflow",
+      "final_status": "MODEL_API_ERROR",
+      "failure_category": "MODEL_API",
+      "baseline": "FAIL",
+      "target": "NOT_RUN",
+      "regression": "NOT_RUN",
+      "model_turns": 1,
+      "tool_calls": 0,
+      "patch_attempts": 0,
+      "tokens": {"input": 0, "output": 0, "reasoning": 0},
+      "duration_seconds": 95.406,
+      "normalization_used": false,
+      "recount_used": false
+    },
+    {
+      "sequence": 2,
+      "model": "z-ai/glm-5.2",
+      "case_id": "commons-lang-mid-overflow",
+      "final_status": "AGENT_BUDGET_EXHAUSTED",
+      "failure_category": "SEARCH_FAILURE",
+      "baseline": "FAIL",
+      "target": "PASS",
+      "regression": "FAIL",
+      "model_turns": 18,
+      "tool_calls": 18,
+      "patch_attempts": 3,
+      "rejected_patch_attempts": 1,
+      "tokens": {"input": 189069, "output": 13485, "reasoning": 13778},
+      "duration_seconds": 1456.922,
+      "normalization_used": false,
+      "recount_used": true
+    },
+    {
+      "sequence": 3,
+      "model": "z-ai/glm-5.2",
+      "case_id": "commons-collections-int-value",
+      "final_status": "RESOLVED",
+      "failure_category": "RESOLVED",
+      "baseline": "FAIL",
+      "target": "PASS",
+      "regression": "PASS",
+      "model_turns": 3,
+      "tool_calls": 3,
+      "patch_attempts": 1,
+      "rejected_patch_attempts": 0,
+      "tokens": {"input": 7291, "output": 385, "reasoning": 342},
+      "duration_seconds": 518.313,
+      "normalization_used": false,
+      "recount_used": false
+    },
+    {
+      "sequence": 4,
+      "model": "openai/gpt-5-mini",
+      "case_id": "commons-collections-int-value",
+      "final_status": "MODEL_API_ERROR",
+      "failure_category": "MODEL_API",
+      "baseline": "FAIL",
+      "target": "NOT_RUN",
+      "regression": "NOT_RUN",
+      "model_turns": 1,
+      "tool_calls": 0,
+      "patch_attempts": 0,
+      "tokens": {"input": 0, "output": 0, "reasoning": 0},
+      "duration_seconds": 54.422,
+      "normalization_used": false,
+      "recount_used": false
+    },
+    {
+      "sequence": 5,
+      "model": "openai/gpt-5-mini",
+      "case_id": "commons-collections-flat3map-entry",
+      "final_status": "MODEL_API_ERROR",
+      "failure_category": "MODEL_API",
+      "baseline": "FAIL",
+      "target": "NOT_RUN",
+      "regression": "NOT_RUN",
+      "model_turns": 1,
+      "tool_calls": 0,
+      "patch_attempts": 0,
+      "tokens": {"input": 0, "output": 0, "reasoning": 0},
+      "duration_seconds": 62.937,
+      "normalization_used": false,
+      "recount_used": false
+    },
+    {
+      "sequence": 6,
+      "model": "z-ai/glm-5.2",
+      "case_id": "commons-collections-flat3map-entry",
+      "final_status": "RESOLVED",
+      "failure_category": "RESOLVED",
+      "baseline": "FAIL",
+      "target": "PASS",
+      "regression": "PASS",
+      "model_turns": 6,
+      "tool_calls": 6,
+      "patch_attempts": 2,
+      "rejected_patch_attempts": 1,
+      "tokens": {"input": 22475, "output": 640, "reasoning": 384},
+      "duration_seconds": 402.797,
+      "normalization_used": false,
+      "recount_used": false
+    }
+  ],
+  "integrity": {
+    "reports_checked": 6,
+    "strict_resume_observations_reused": 6,
+    "active_worktrees_after_run": 0,
+    "original_repositories_unchanged": 6,
+    "upstream_caches_unchanged": true,
+    "exact_api_key_matches": 0,
+    "authorization_header_matches": 0,
+    "agent_visible_hidden_metadata_matches": 0
+  }
+}

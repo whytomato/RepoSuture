@@ -1,6 +1,6 @@
 # RepoSuture Execution Record
 
-Last updated: 2026-07-22
+Last updated: 2026-07-24
 
 ## 2026-07-22 RepoSuture Release 0.3 — rename, repeated evaluation, and real-world bugs
 
@@ -29,12 +29,14 @@ Last updated: 2026-07-22
   deselected), Ruff and mypy passed, MVP validation was 6/6, the scripted harness was 6/6,
   the complete two-identity offline matrix was 12/12, and the locked real-world suite
   completed deterministic validation 3/3 with Java 17, Maven 3.9.9, and JUnit.
-- [ ] Commit the clean non-live implementation, rename the GitHub repository through the
-  authenticated GitHub CLI, update origin/About/topics, push `main`, and require passing CI.
-- [ ] From the same clean pushed commit, preflight the two exact OpenRouter models and run
+- [x] Commit the clean non-live implementation as
+  `6f0ced786524c7e4f3514a284b826eac9865bcac`, complete the user-performed GitHub rename,
+  update origin to `whytomato/RepoSuture`, push `main`, verify the old URL redirect, and
+  require passing Ubuntu and Windows CI.
+- [x] From the same clean pushed commit, preflight the two exact OpenRouter models and run
   exactly 36 fresh MVP attempts plus exactly six fresh real-world attempts, without
   replacement attempts or budget tuning.
-- [ ] Publish only reviewed sanitized R3/R1 summaries, rerun quality gates, commit and push
+- [x] Publish only reviewed sanitized R3/R1 summaries, rerun quality gates, commit and push
   the result documents, and verify clean matching local/remote `main` SHAs.
 
 ### Release invariants
@@ -77,6 +79,20 @@ Last updated: 2026-07-22
   baseline failures, applied only the locked hidden upstream production diffs, and then
   passed all three target tests and relevant regression suites. Its fingerprint is
   `345839d264b3b5c144fa8f9bbc75b419d917a4c0266d80c119c3dfb34ec19e82`.
+- The implementation commit was pushed to the renamed
+  `https://github.com/whytomato/RepoSuture.git` repository. Public API checks found
+  `main` at the exact local SHA, the former URL redirected, and GitHub Actions run
+  `30076666361` completed successfully on Ubuntu and Windows.
+- The fixed interleaved MVP matrix completed all 36 observations. GLM 5.2 resolved 18/18;
+  GPT-5 Mini produced 18 complete `MODEL_API_ERROR` observations because the upstream
+  provider returned Terms-of-Service HTTP 403 before any tool call. The failures were not
+  replaced and do not constitute a repair-capability comparison.
+- The fixed real-world matrix completed all six observations. GLM 5.2 resolved the two
+  Commons Collections Bugs and ended the Commons Lang run after target PASS, regression
+  FAIL, rollback/replanning, and budget exhaustion. GPT-5 Mini's three observations had
+  the same upstream 403 result. Strict resume reused all 42 completed observations without
+  another API request; worktree, repository/cache, artifact, credential, and hidden-data
+  audits passed.
 
 ## 2026-07-22 Milestone 5 — release hardening and first clean live evaluation
 
