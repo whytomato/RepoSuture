@@ -30,11 +30,17 @@ Last updated: 2026-07-24
   repositories/categories, and the required cross-file/regression-sensitive coverage.
 - [x] Run targeted tests while implementing, then one successful full pytest/Ruff/mypy gate
   and exactly one each of the specified deterministic/scripted/replay integrations.
-- [ ] Commit the validated implementation locally without pushing; use that exact clean
-  commit for all live evidence.
-- [ ] Confirm both exact OpenRouter model ids and a 28-attempt repair plan plus 12-attempt
-  feedback-ablation plan, never exceeding forty assigned live attempts and never replacing
-  failures.
+- [x] Commit the validated implementation locally without pushing as
+  `70551b1cd7de9ba81b739d85c10c63569ee8b378`; use that exact clean commit
+  for the initial live protocol evidence.
+- [x] Confirm both exact OpenRouter model ids and a 28-attempt repair plan plus 12-attempt
+  feedback-ablation plan. The live sequence was stopped after assignment 15 when a generic
+  candidate-compilation classification defect was confirmed; no replacement attempts were
+  made.
+- [x] Fix the generic defect with offline regression coverage, run the one permitted
+  post-defect complete quality gate, and commit the correction separately. Because a full
+  40-attempt restart would exceed the hard cap after 15 assignments, do not issue further
+  paid requests in this task.
 - [ ] Publish only reviewed sanitized JSON/Markdown evidence, commit it locally, perform the
   final integrity scan, push `main` exactly once, and observe GitHub Actions at most once.
 
@@ -86,6 +92,19 @@ Last updated: 2026-07-24
   one-candidate mode unresolved after target PASS/regression FAIL, for 1/2; both paths
   executed real Git, Maven, and JUnit. Legacy absolute-report relocation/replay
   compatibility passed its focused smoke.
+- The first live DeepSeek assignment reached valid model-requested Tool Calls and
+  deterministic resolution, so the Provider protocol gate passed. The sequence was stopped
+  during assignment 15 after a GLM candidate caused a Java compilation error that the
+  harness incorrectly labeled as infrastructure because no Surefire XML existed. This is a
+  generic phase-classification defect, not a model success/failure adjustment.
+- The correction preserves baseline compilation errors as infrastructure but records
+  accepted-candidate compilation failures as `COMPILATION_FAILED`, rolls the candidate
+  back, returns bounded verification feedback in full-agent mode, and classifies unresolved
+  runs as `TARGET_UNRESOLVED`. Real Maven/JUnit regression coverage proves a later valid
+  Patch can still resolve after rollback.
+- The single post-defect complete quality gate passed with `312 passed, 1 skipped,
+  2 deselected` in 544.25 seconds; Ruff passed and mypy reported no issues in 27 source
+  files. No paid request was issued during or after this correction.
 - During the first V2 validation, four upstream full suites exposed environmental tests
   outside the benchmark contract: external HTTP, Windows symlink privilege, and CRLF
   resource/hash assumptions. RepoSuture now supports an explicit safe JUnit regression

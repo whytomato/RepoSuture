@@ -501,7 +501,11 @@ def classify_failure(report: RunReport, *, search_failure_observed: bool) -> Fai
     if search_failure_observed:
         return FailureCategory.SEARCH_FAILURE
     if report.final_status is FinalStatus.UNRESOLVED:
-        if report.regression_result.outcome in {TestOutcome.FAIL, TestOutcome.TIMEOUT}:
+        if report.regression_result.outcome in {
+            TestOutcome.FAIL,
+            TestOutcome.COMPILATION_FAILED,
+            TestOutcome.TIMEOUT,
+        }:
             return FailureCategory.REGRESSION_FAILED
         return FailureCategory.TARGET_TEST_FAILED
     return mapping[report.final_status]

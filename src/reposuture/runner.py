@@ -303,6 +303,7 @@ def verify_case(
                                 worktree,
                                 case.target_test,
                                 timeout_seconds=case.target_test_timeout_seconds,
+                                candidate_patch_applied=True,
                             )
                             patched_target = patched_execution.as_report()
                             _write_execution_log(
@@ -316,6 +317,9 @@ def verify_case(
                                     "exit_code": patched_target.exit_code,
                                     "test_observed": patched_target.test_observed,
                                     "timed_out": patched_target.timed_out,
+                                    "compilation_failed": (
+                                        patched_target.compilation_failed
+                                    ),
                                     "stdout_truncated": patched_target.stdout_truncated,
                                     "stderr_truncated": patched_target.stderr_truncated,
                                 },
@@ -350,6 +354,7 @@ def verify_case(
                                     worktree,
                                     case.regression_tests,
                                     timeout_seconds=case.regression_timeout_seconds,
+                                    candidate_patch_applied=True,
                                 )
                                 regression = regression_execution.as_report()
                                 _write_execution_log(
@@ -363,6 +368,9 @@ def verify_case(
                                         "exit_code": regression.exit_code,
                                         "test_observed": regression.test_observed,
                                         "timed_out": regression.timed_out,
+                                        "compilation_failed": (
+                                            regression.compilation_failed
+                                        ),
                                         "stdout_truncated": regression.stdout_truncated,
                                         "stderr_truncated": regression.stderr_truncated,
                                     },

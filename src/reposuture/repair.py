@@ -797,6 +797,7 @@ def repair_case(
                                 artifacts.patched_target_log,
                                 append=True,
                                 attempt_label=f"patch-{len(environment.patch_attempts)}",
+                                candidate_patch_applied=True,
                             )
                             target_executions += 1
                             test_execution_duration += (
@@ -816,6 +817,9 @@ def repair_case(
                                     "test_observed": patched_target.test_observed,
                                     "target_found": patched_target.target_found,
                                     "timed_out": patched_target.timed_out,
+                                    "compilation_failed": (
+                                        patched_target.compilation_failed
+                                    ),
                                 },
                             )
                             result = _with_verification_observation(
@@ -835,13 +839,22 @@ def repair_case(
                                 final_status = FinalStatus.UNRESOLVED
                                 failure_reason = "patched target test timed out"
                                 verification_terminal = True
-                            elif patched_target.outcome is TestOutcome.FAIL:
+                            elif patched_target.outcome in {
+                                TestOutcome.FAIL,
+                                TestOutcome.COMPILATION_FAILED,
+                            }:
                                 _rollback_candidate(environment, patcher, inspection)
+                                target_failure_reason = (
+                                    "CANDIDATE_COMPILATION_FAILED"
+                                    if patched_target.outcome
+                                    is TestOutcome.COMPILATION_FAILED
+                                    else "TARGET_TEST_FAILED"
+                                )
                                 trace.emit(
                                     "candidate_reverted",
                                     status="REVERTED",
                                     metadata={
-                                        "reason": "TARGET_TEST_FAILED",
+                                        "reason": target_failure_reason,
                                         "patch_attempt_id": len(environment.patch_attempts),
                                     },
                                 )
@@ -852,14 +865,19 @@ def repair_case(
                                 ):
                                     final_status = FinalStatus.TARGET_TEST_FAILED
                                     failure_reason = (
-                                        "the single accepted candidate did not pass "
-                                        "the target test"
+                                        "the single accepted candidate did not compile"
+                                        if patched_target.outcome
+                                        is TestOutcome.COMPILATION_FAILED
+                                        else (
+                                            "the single accepted candidate did not pass "
+                                            "the target test"
+                                        )
                                     )
                                     verification_terminal = True
                                 else:
                                     pending_replan = {
                                         "reasons": [
-                                            "TARGET_TEST_FAILED",
+                                            target_failure_reason,
                                             "CANDIDATE_REVERTED",
                                         ],
                                         "patch_attempt_id": len(
@@ -910,6 +928,9 @@ def repair_case(
                                             "patch_attempt_id": len(environment.patch_attempts),
                                             "test_observed": regression.test_observed,
                                             "timed_out": regression.timed_out,
+                                            "compilation_failed": (
+                                                regression.compilation_failed
+                                            ),
                                         },
                                     )
                                     result = _with_verification_observation(
@@ -1294,11 +1315,13 @@ def _run_target(
     *,
     append: bool,
     attempt_label: str,
+    candidate_patch_applied: bool = False,
 ) -> MavenExecution:
     execution = maven.run_target(
         worktree,
         case.target_test,
         timeout_seconds=case.target_test_timeout_seconds,
+        candidate_patch_applied=candidate_patch_applied,
     )
     if append:
         _append_execution_log(log_path, execution, attempt_label)
@@ -1319,6 +1342,7 @@ def _run_regression(
         worktree,
         case.regression_tests,
         timeout_seconds=case.regression_timeout_seconds,
+        candidate_patch_applied=True,
     )
     _append_execution_log(log_path, execution, attempt_label)
     return execution
@@ -1379,6 +1403,7 @@ def _compact_test_result(result: TestResultReport) -> dict[str, object]:
         "test_failures": result.test_failures,
         "tests_skipped": result.tests_skipped,
         "timed_out": result.timed_out,
+        "compilation_failed": result.compilation_failed,
         "infrastructure_error": result.infrastructure_error,
     }
 

@@ -43,6 +43,7 @@ class TestOutcome(StrEnum):
     NOT_RUN = "NOT_RUN"
     PASS = "PASS"
     FAIL = "FAIL"
+    COMPILATION_FAILED = "COMPILATION_FAILED"
     TIMEOUT = "TIMEOUT"
     INFRASTRUCTURE_ERROR = "INFRASTRUCTURE_ERROR"
 
@@ -90,6 +91,7 @@ class ObservedFailure(StrEnum):
     PATCH_REJECTED = "PATCH_REJECTED"
     PATCH_GIT_CHECK_FAILED = "PATCH_GIT_CHECK_FAILED"
     PATCH_POLICY_REJECTED = "PATCH_POLICY_REJECTED"
+    CANDIDATE_COMPILATION_FAILED = "CANDIDATE_COMPILATION_FAILED"
     TARGET_TEST_FAILED = "TARGET_TEST_FAILED"
     REGRESSION_FAILED = "REGRESSION_FAILED"
     CANDIDATE_REVERTED = "CANDIDATE_REVERTED"
@@ -160,6 +162,7 @@ class TestResultReport(BaseModel):
     tests_skipped: int = Field(default=0, ge=0)
     surefire_report_files: int = Field(default=0, ge=0)
     target_found: bool = False
+    compilation_failed: bool = False
     infrastructure_error: str | None = None
 
     @model_validator(mode="after")
@@ -182,6 +185,25 @@ class TestResultReport(BaseModel):
             or self.infrastructure_error is not None
         ):
             raise ValueError("FAIL requires an observed test failure and non-zero exit code")
+        if self.outcome is TestOutcome.COMPILATION_FAILED and (
+            self.exit_code in {None, 0}
+            or self.timed_out
+            or self.test_observed
+            or self.tests_executed != 0
+            or not self.compilation_failed
+            or self.infrastructure_error is not None
+        ):
+            raise ValueError(
+                "COMPILATION_FAILED requires an unobserved candidate compilation "
+                "failure with a non-zero exit code"
+            )
+        if (
+            self.compilation_failed
+            and self.outcome is not TestOutcome.COMPILATION_FAILED
+        ):
+            raise ValueError(
+                "compilation_failed=true requires outcome=COMPILATION_FAILED"
+            )
         if self.outcome is TestOutcome.TIMEOUT and not self.timed_out:
             raise ValueError("TIMEOUT requires timed_out=true")
         if self.outcome is TestOutcome.INFRASTRUCTURE_ERROR and not self.infrastructure_error:
@@ -529,7 +551,11 @@ class RunReport(BaseModel):
                     )
                 )
                 and self.patched_target_test_result.outcome
-                in {TestOutcome.FAIL, TestOutcome.TIMEOUT}
+                in {
+                    TestOutcome.FAIL,
+                    TestOutcome.COMPILATION_FAILED,
+                    TestOutcome.TIMEOUT,
+                }
                 and self.regression_result.outcome is TestOutcome.NOT_RUN
             ),
             FinalStatus.REGRESSION_FAILED: (
@@ -543,7 +569,11 @@ class RunReport(BaseModel):
                 )
                 and self.patched_target_test_result.outcome is TestOutcome.PASS
                 and self.regression_result.outcome
-                in {TestOutcome.FAIL, TestOutcome.TIMEOUT}
+                in {
+                    TestOutcome.FAIL,
+                    TestOutcome.COMPILATION_FAILED,
+                    TestOutcome.TIMEOUT,
+                }
             ),
         }
         if self.final_status in status_shape_is_valid and not status_shape_is_valid[
@@ -650,16 +680,22 @@ def classify_run_failures(
                     target_pass_seen = True
                 elif event.status in {
                     TestOutcome.FAIL.value,
+                    TestOutcome.COMPILATION_FAILED.value,
                     TestOutcome.TIMEOUT.value,
                 }:
+                    if event.status == TestOutcome.COMPILATION_FAILED.value:
+                        add(ObservedFailure.CANDIDATE_COMPILATION_FAILED)
                     add(ObservedFailure.TARGET_TEST_FAILED)
         elif event.event_type == "regression_test_completed":
             if event.status == TestOutcome.PASS.value:
                 regression_pass_seen = True
             elif event.status in {
                 TestOutcome.FAIL.value,
+                TestOutcome.COMPILATION_FAILED.value,
                 TestOutcome.TIMEOUT.value,
             }:
+                if event.status == TestOutcome.COMPILATION_FAILED.value:
+                    add(ObservedFailure.CANDIDATE_COMPILATION_FAILED)
                 add(ObservedFailure.REGRESSION_FAILED)
         elif event.event_type == "agent_replan_requested":
             reasons = metadata.get("reasons")

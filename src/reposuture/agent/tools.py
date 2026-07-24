@@ -849,6 +849,7 @@ class _RepoSutureToolHandlers:
             self.environment.worktree,
             self.environment.target_test,
             timeout_seconds=self.environment.target_test_timeout_seconds,
+            candidate_patch_applied=self.environment.patch_inspection is not None,
         )
         self.environment.latest_target_execution = execution
         process = execution.process
@@ -871,6 +872,7 @@ class _RepoSutureToolHandlers:
                 "exit_code": process.exit_code,
                 "duration_seconds": process.duration_seconds,
                 "timed_out": process.timed_out,
+                "compilation_failed": execution.compilation_failed,
                 "infrastructure_error": execution.infrastructure_error,
                 "stdout": stdout,
                 "stderr": stderr,

@@ -202,6 +202,32 @@ def test_compile_failure_is_infrastructure_not_baseline_failure(tmp_path: Path) 
     assert execution.test_observed is False
 
 
+def test_candidate_compile_failure_is_not_infrastructure(tmp_path: Path) -> None:
+    process = process_result(tmp_path, exit_code=1)
+    process = replace(
+        process,
+        stderr="[ERROR] COMPILATION ERROR\n[ERROR] cannot find symbol",
+        stderr_bytes_seen=len(
+            "[ERROR] COMPILATION ERROR\n[ERROR] cannot find symbol"
+        ),
+    )
+    target = TargetTest(class_name="com.example.ExampleTest", method_name="rejectsNull")
+
+    execution = MavenRunner(ProcessRunner()).interpret_target_process(
+        process,
+        tmp_path,
+        target,
+        candidate_patch_applied=True,
+    )
+    report = execution.as_report()
+
+    assert execution.outcome is TestOutcome.COMPILATION_FAILED
+    assert execution.test_observed is False
+    assert execution.compilation_failed is True
+    assert execution.infrastructure_error is None
+    assert report.compilation_failed is True
+
+
 def test_target_timeout_is_not_a_normal_failure(tmp_path: Path) -> None:
     process = ProcessResult(
         command=("mvn", "test"),

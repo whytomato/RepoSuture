@@ -38,6 +38,7 @@ class MavenExecution:
     tests_skipped: int = 0
     surefire_report_files: int = 0
     target_found: bool = False
+    compilation_failed: bool = False
 
     def as_report(self) -> TestResultReport:
         return TestResultReport(
@@ -58,6 +59,7 @@ class MavenExecution:
             tests_skipped=self.tests_skipped,
             surefire_report_files=self.surefire_report_files,
             target_found=self.target_found,
+            compilation_failed=self.compilation_failed,
             infrastructure_error=self.infrastructure_error,
         )
 
@@ -106,6 +108,7 @@ class MavenRunner:
         target: TargetTest,
         *,
         timeout_seconds: float,
+        candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         self._clear_surefire_reports(worktree)
         process = self.runner.run(
@@ -113,7 +116,12 @@ class MavenRunner:
             cwd=worktree,
             timeout_seconds=timeout_seconds,
         )
-        return self.interpret_target_process(process, worktree, target)
+        return self.interpret_target_process(
+            process,
+            worktree,
+            target,
+            candidate_patch_applied=candidate_patch_applied,
+        )
 
     def run_regression(
         self,
@@ -121,6 +129,7 @@ class MavenRunner:
         regression_tests: tuple[TargetTest, ...] | None = None,
         *,
         timeout_seconds: float,
+        candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         self._clear_surefire_reports(worktree)
         process = self.runner.run(
@@ -128,13 +137,20 @@ class MavenRunner:
             cwd=worktree,
             timeout_seconds=timeout_seconds,
         )
-        return self.interpret_regression_process(process, worktree, regression_tests)
+        return self.interpret_regression_process(
+            process,
+            worktree,
+            regression_tests,
+            candidate_patch_applied=candidate_patch_applied,
+        )
 
     def interpret_target_process(
         self,
         process: ProcessResult,
         worktree: Path,
         target: TargetTest,
+        *,
+        candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         terminal = self._terminal_process_outcome(process)
         if terminal is not None:
@@ -147,6 +163,12 @@ class MavenRunner:
             return self._with_evidence(process, TestOutcome.PASS, evidence)
         if process.exit_code != 0 and evidence.target_executed and evidence.target_failed:
             return self._with_evidence(process, TestOutcome.FAIL, evidence)
+        if (
+            candidate_patch_applied
+            and process.exit_code != 0
+            and self._is_compilation_failure(process)
+        ):
+            return self._candidate_compilation_failure(process)
 
         if evidence.target_found and not evidence.target_executed:
             detail = "target JUnit test was skipped rather than executed"
@@ -161,6 +183,8 @@ class MavenRunner:
         process: ProcessResult,
         worktree: Path,
         regression_tests: tuple[TargetTest, ...] | None = None,
+        *,
+        candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         terminal = self._terminal_process_outcome(process)
         if terminal is not None:
@@ -184,6 +208,12 @@ class MavenRunner:
             return self._with_evidence(process, TestOutcome.PASS, evidence)
         if process.exit_code != 0 and evidence.executed > 0 and evidence.failures > 0:
             return self._with_evidence(process, TestOutcome.FAIL, evidence)
+        if (
+            candidate_patch_applied
+            and process.exit_code != 0
+            and self._is_compilation_failure(process)
+        ):
+            return self._candidate_compilation_failure(process)
         if evidence.executed == 0:
             detail = "no executed JUnit tests were found in Surefire reports"
         else:
@@ -209,6 +239,7 @@ class MavenRunner:
             "tests_skipped": execution.tests_skipped,
             "surefire_report_files": execution.surefire_report_files,
             "target_found": execution.target_found,
+            "compilation_failed": execution.compilation_failed,
         }
         return (
             json.dumps(header, ensure_ascii=False, sort_keys=True)
@@ -289,6 +320,27 @@ class MavenRunner:
             tests_skipped=evidence.skipped,
             surefire_report_files=evidence.report_files,
             target_found=evidence.target_found,
+        )
+
+    @staticmethod
+    def _candidate_compilation_failure(process: ProcessResult) -> MavenExecution:
+        return MavenExecution(
+            process,
+            TestOutcome.COMPILATION_FAILED,
+            test_observed=False,
+            compilation_failed=True,
+        )
+
+    @staticmethod
+    def _is_compilation_failure(process: ProcessResult) -> bool:
+        diagnostic = f"{process.stdout}\n{process.stderr}".casefold()
+        return any(
+            marker in diagnostic
+            for marker in (
+                "compilation error",
+                "compilation failure",
+                "compilation failed",
+            )
         )
 
     def _clear_surefire_reports(self, worktree: Path) -> None:

@@ -56,6 +56,18 @@ REGRESSION_BREAKING_PATCH = f"""diff --git a/{SOURCE_PATH} b/{SOURCE_PATH}
  }}
 """
 
+COMPILATION_BREAKING_PATCH = f"""diff --git a/{SOURCE_PATH} b/{SOURCE_PATH}
+--- a/{SOURCE_PATH}
++++ b/{SOURCE_PATH}
+@@ -7,5 +7,5 @@ public final class UserRegistrationService {{
+         if (email.isBlank()) {{
+             throw new InvalidEmailException("email must not be blank");
+         }}
+-        return new RegisteredUser(username.trim(), email.trim().toLowerCase(Locale.ROOT));
++        return missingRegistrationFactory(username, email);
+     }}
+"""
+
 TEST_MODIFYING_PATCH = f"""diff --git a/{TEST_PATH} b/{TEST_PATH}
 --- a/{TEST_PATH}
 +++ b/{TEST_PATH}
@@ -337,12 +349,90 @@ def test_failed_target_diagnostic_allows_revised_patch_to_resolve(tmp_path: Path
     assert report.total_patch_attempts == 2
     assert report.target_test_execution_count == 3
     assert report.regression_execution_count == 1
+    assert report.primary_failure is None
+    assert ObservedFailure.TARGET_TEST_FAILED in report.observed_failures
+    assert ObservedFailure.CANDIDATE_REVERTED in report.observed_failures
     assert report.patched_target_test_result.outcome is TestOutcome.PASS
     patched_log = Path(report.artifacts["patched_target_test_log"]).read_text(
         encoding="utf-8"
     )
     assert '"outcome": "FAIL"' in patched_log
     assert '"outcome": "PASS"' in patched_log
+    assert _git_status(repository)[1] == ""
+
+
+@pytest.mark.integration
+def test_candidate_compile_failure_rolls_back_and_allows_repair(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    fake = FakeLLM(
+        [
+            _patch_call("compile-break-1", COMPILATION_BREAKING_PATCH),
+            _patch_call("compile-fix-2", GOLDEN_PATCH.read_text(encoding="utf-8")),
+        ]
+    )
+
+    report = repair_case(case_path, tmp_path / "artifacts", llm_client=fake)
+
+    assert report.final_status is FinalStatus.RESOLVED
+    assert report.total_patch_attempts == 2
+    assert report.target_test_execution_count == 3
+    assert report.regression_execution_count == 1
+    assert report.primary_failure is None
+    assert ObservedFailure.CANDIDATE_COMPILATION_FAILED in report.observed_failures
+    assert ObservedFailure.TARGET_TEST_FAILED in report.observed_failures
+    assert ObservedFailure.CANDIDATE_REVERTED in report.observed_failures
+    patched_log = Path(report.artifacts["patched_target_test_log"]).read_text(
+        encoding="utf-8"
+    )
+    assert '"outcome": "COMPILATION_FAILED"' in patched_log
+    assert '"outcome": "PASS"' in patched_log
+    trace_events = [
+        json.loads(line)
+        for line in Path(report.artifacts["trace"])
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
+    assert any(
+        event["event_type"] == "target_test_completed"
+        and event["status"] == "COMPILATION_FAILED"
+        for event in trace_events
+    )
+    assert any(
+        event["event_type"] == "agent_replan_requested"
+        and event["metadata"]["reasons"]
+        == ["CANDIDATE_COMPILATION_FAILED", "CANDIDATE_REVERTED"]
+        for event in trace_events
+    )
+    assert _git_status(repository)[1] == ""
+
+
+@pytest.mark.integration
+def test_unresolved_candidate_compile_failure_is_classified_as_model_failure(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    fake = FakeLLM(
+        [
+            _patch_call("compile-break-1", COMPILATION_BREAKING_PATCH),
+            AgentResponse.finish("Unable to provide another candidate."),
+        ]
+    )
+
+    report = repair_case(case_path, tmp_path / "artifacts", llm_client=fake)
+
+    assert report.terminal_status is FinalStatus.MODEL_STOPPED
+    assert report.primary_failure is PrimaryFailure.TARGET_UNRESOLVED
+    assert report.observed_failures == [
+        ObservedFailure.CANDIDATE_COMPILATION_FAILED,
+        ObservedFailure.TARGET_TEST_FAILED,
+        ObservedFailure.CANDIDATE_REVERTED,
+        ObservedFailure.MODEL_STOPPED,
+    ]
+    assert report.patch_applied is False
+    assert report.patched_target_test_result.outcome is TestOutcome.COMPILATION_FAILED
+    assert report.regression_result.outcome is TestOutcome.NOT_RUN
     assert _git_status(repository)[1] == ""
 
 
