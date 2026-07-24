@@ -41,8 +41,9 @@ Last updated: 2026-07-24
   post-defect complete quality gate, and commit the correction separately. Because a full
   40-attempt restart would exceed the hard cap after 15 assignments, do not issue further
   paid requests in this task.
-- [ ] Publish only reviewed sanitized JSON/Markdown evidence, commit it locally, perform the
-  final integrity scan, push `main` exactly once, and observe GitHub Actions at most once.
+- [x] Prepare and review only sanitized JSON/Markdown evidence, perform the final integrity
+  scan, and leave the reviewed local commits ready for the one permitted `main` push.
+  The external push and one-time Actions observation are reported in the final task handoff.
 
 ### Release 0.4 invariants
 

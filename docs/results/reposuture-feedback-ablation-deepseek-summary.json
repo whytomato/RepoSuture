@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "report_kind": "live_ablation_not_executed",
+  "generated_at_utc": "2026-07-24T16:09:54Z",
+  "evaluation_valid": false,
+  "status": "NOT_EXECUTED",
+  "reason": "The preceding repair dataset was invalidated by a generic framework defect. Restarting the required 28 repair attempts plus 12 ablation attempts after 15 prior assignments would exceed the hard cap of 40.",
+  "model": "deepseek/deepseek-v4-pro",
+  "provider": "openai",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "suite_id": "maven-real-world-v2-feedback-ablation",
+  "schedule": "interleaved",
+  "sequential": true,
+  "cases": [
+    "commons-lang-mid-overflow",
+    "commons-collections-int-value",
+    "commons-codec-zero-big-integer",
+    "commons-io-bounded-reader-skip",
+    "commons-csv-supplementary-delimiter",
+    "commons-beanutils-nondouble-number"
+  ],
+  "modes": [
+    "full-agent",
+    "single-candidate-no-feedback"
+  ],
+  "planned_attempts": 12,
+  "assigned_attempts": 0,
+  "completed_attempts": 0,
+  "replacement_attempts": 0,
+  "metrics": {
+    "full-agent": null,
+    "single-candidate-no-feedback": null
+  },
+  "benefit_attribution": {
+    "patch_rejection_feedback": null,
+    "target_test_feedback": null,
+    "regression_feedback": null,
+    "rollback": null,
+    "replanning": null
+  },
+  "scripted_smoke": {
+    "live_model_evidence": false,
+    "attempts": 2,
+    "resolved": 1,
+    "full_agent_result": "RESOLVED",
+    "single_candidate_no_feedback_result": "REGRESSION_FAILED",
+    "real_git_maven_junit": true
+  }
+}

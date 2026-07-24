@@ -39,6 +39,10 @@ Release 0.3 的重复两模型 MVP 结果见
 [`docs/results/reposuture-mvp-two-model-r3.md`](docs/results/reposuture-mvp-two-model-r3.md)，
 真实上游 Java Bug 结果见
 [`docs/results/reposuture-real-world-r1.md`](docs/results/reposuture-real-world-r1.md)。
+Release 0.4 的部分 live 运行因通用编译失败分类缺陷而失效；透明的停止原因和原始审计计数见
+[`reposuture-real-v2-glm-deepseek.md`](docs/results/reposuture-real-v2-glm-deepseek.md)，
+未执行的反馈消融见
+[`reposuture-feedback-ablation-deepseek.md`](docs/results/reposuture-feedback-ablation-deepseek.md)。
 
 ```mermaid
 stateDiagram-v2
@@ -100,6 +104,17 @@ without a duplicated breadth matrix. A separate controlled 12-attempt DeepSeek a
 compares the normal feedback loop with `single-candidate-no-feedback`, which permits one
 candidate and withholds post-Patch verification from the model while retaining the same
 deterministic correctness oracle.
+
+### Release 0.4 live status
+
+The live sequence was stopped after 15 assigned repair attempts when an accepted
+model-generated Patch that did not compile was incorrectly classified as infrastructure.
+The generic defect is fixed and covered by real Maven/JUnit rollback-and-repair tests, but
+the pre-fix observations are invalidated. Restarting the complete 28-attempt repair plan
+plus the 12-attempt ablation would have exceeded the task's cumulative 40-attempt cap, so
+RepoSuture made no further paid request. There is therefore no valid GLM-versus-DeepSeek
+Release 0.4 rate and no live ablation result. The published audit documents retain the
+partial evidence without presenting it as a model comparison.
 
 Reports distinguish end-to-end availability from model capability:
 

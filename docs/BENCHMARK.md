@@ -210,6 +210,13 @@ When no `--model` is supplied, RepoSuture reads `REPOSUTURE_MODEL` and
 when used. The new variables always win when both names are present. Exact model ids are
 written to the plan and reports.
 
+Release 0.4's first live V2 sequence was stopped after 15 assigned attempts because an
+accepted model Patch that did not compile was incorrectly classified as infrastructure.
+That generic defect is fixed, but the pre-fix observations are invalidated and the
+40-attempt cumulative cap did not permit a complete restart. Consequently no Release 0.4
+GLM-versus-DeepSeek rate or Wilson interval is published. The sanitized audit is
+[`results/reposuture-real-v2-glm-deepseek.md`](results/reposuture-real-v2-glm-deepseek.md).
+
 ## Real-world suite
 
 `benchmarks/real_world/suites/maven-real-world-v2.yaml` is separate from the six synthetic
@@ -408,6 +415,9 @@ reposuture benchmark-ablation `
 The Release 0.4 locked subset is documented in
 [`REAL_WORLD_BENCHMARK.md`](REAL_WORLD_BENCHMARK.md). Resume identity includes execution
 mode, so a full-Agent observation can never satisfy a no-feedback schedule item.
+The live ablation was not started after the repair dataset was invalidated; its locked plan
+and N/A metrics are recorded in
+[`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md).
 
 ## Exit codes
 
