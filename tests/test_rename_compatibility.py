@@ -36,7 +36,7 @@ def test_legacy_report_fields_load_and_new_reports_serialize_neutral_names() -> 
     payload = metadata.model_dump(mode="json")
     assert payload["project_git_commit"] == "a" * 40
     assert payload["project_worktree_dirty"] is False
-    assert payload["project_version"] == "0.3.0"
+    assert payload["project_version"] == "0.4.0"
     assert "patchpilot_git_commit" not in payload
     assert "patchpilot_worktree_dirty" not in payload
 
@@ -71,6 +71,6 @@ def test_deprecated_cli_preserves_exit_code(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_primary_and_deprecated_commands_share_one_cli_implementation() -> None:
     assert legacy_cli.app is cli.app
-    assert __version__ == "0.3.0"
+    assert __version__ == "0.4.0"
     assert "patchpilot.agent" not in sys.modules
     assert not (Path(__file__).resolve().parents[1] / "src" / "patchpilot").exists()

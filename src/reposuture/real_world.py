@@ -57,6 +57,29 @@ class RealWorldSourceCase(BaseModel):
     fix_commit: CommitSha
     build_system: Literal["maven"]
     module_path: str
+    bug_category: SafeId
+    cross_file_or_component: bool = False
+    regression_sensitive: bool = False
+    regression_scope: Literal["full-project-maven-test", "selected-junit-tests"] = (
+        "full-project-maven-test"
+    )
+    regression_command: list[str] = Field(
+        default_factory=lambda: ["./mvnw", "test"],
+        min_length=2,
+        max_length=4,
+    )
+    regression_test_selectors: list[
+        Annotated[
+            str,
+            StringConstraints(
+                pattern=(
+                    r"^(?:[A-Za-z_$][A-Za-z0-9_$]*\.)*"
+                    r"[A-Za-z_$][A-Za-z0-9_$]*#[A-Za-z_$][A-Za-z0-9_$]*$"
+                ),
+                max_length=1_000,
+            ),
+        ]
+    ] = Field(default_factory=list, max_length=20)
     target_test_selector: Annotated[str, StringConstraints(min_length=3, max_length=1000)]
     production_paths: list[str] = Field(min_length=1, max_length=20)
     test_paths: list[str] = Field(min_length=1, max_length=20)
@@ -101,6 +124,28 @@ class RealWorldSourceCase(BaseModel):
             raise ValueError("test overlays must be under src/test/java")
         if self.buggy_commit == self.fix_commit:
             raise ValueError("buggy and fix commits must differ")
+        if self.regression_scope == "full-project-maven-test":
+            if self.regression_test_selectors:
+                raise ValueError("full-project regression must not select individual tests")
+            if self.regression_command != ["./mvnw", "test"]:
+                raise ValueError("full-project regression command must be the Maven suite")
+        else:
+            if not self.regression_test_selectors:
+                raise ValueError("selected regression scope requires JUnit selectors")
+            if len(self.regression_test_selectors) != len(
+                set(self.regression_test_selectors)
+            ):
+                raise ValueError("selected regression tests must not contain duplicates")
+            expected = [
+                "./mvnw",
+                "-q",
+                f"-Dtest={','.join(self.regression_test_selectors)}",
+                "test",
+            ]
+            if self.regression_command != expected:
+                raise ValueError(
+                    "selected regression command must exactly match its JUnit selectors"
+                )
         return self
 
 
@@ -136,7 +181,7 @@ class RealWorldSourceLock(BaseModel):
 
     schema_version: Literal[1] = 1
     sources_manifest_sha256: Sha256
-    generated_by: Literal["reposuture-0.3"] = "reposuture-0.3"
+    generated_by: Literal["reposuture-0.3", "reposuture-0.4"] = "reposuture-0.4"
     entries: list[RealWorldLockEntry] = Field(min_length=1, max_length=20)
 
     @model_validator(mode="after")
@@ -508,6 +553,10 @@ def _build_fixture(
         _git(runner, temporary, "checkout", "--detach", case.buggy_commit, timeout_seconds=900)
         _git(runner, temporary, "apply", "--check", "-", input_bytes=test_overlay)
         _git(runner, temporary, "apply", "-", input_bytes=test_overlay)
+        # Newly added upstream regression-test files are otherwise untracked and omitted
+        # from ``git diff --name-only``. Intent-to-add exposes their paths without staging
+        # content or changing production evidence.
+        _git(runner, temporary, "add", "--intent-to-add", "--", *case.test_paths)
         changed = {
             line.strip()
             for line in _git(
@@ -686,7 +735,8 @@ def bootstrap_real_world(
     existing_lock: RealWorldSourceLock | None = None
     if lock_path.exists():
         existing_lock = load_real_world_lock(lock_path)
-        validate_source_lock(manifest, manifest_sha, existing_lock)
+        if not write_lock:
+            validate_source_lock(manifest, manifest_sha, existing_lock)
     elif not write_lock:
         raise RealWorldBenchmarkError("source-lock.json is required; bootstrap is locked")
     existing_entries = (
@@ -698,11 +748,28 @@ def bootstrap_real_world(
     entries: list[RealWorldLockEntry] = []
     for case in manifest.cases:
         expected = existing_entries.get(case.case_id)
+        if expected is not None:
+            upstream_identity = (
+                expected.buggy_commit,
+                expected.fix_commit,
+                expected.production_patch_sha256,
+                expected.test_overlay_sha256,
+                expected.license_sha256,
+            )
+            manifest_identity = (
+                case.buggy_commit,
+                case.fix_commit,
+                case.production_patch_sha256,
+                case.test_overlay_sha256,
+                case.license_sha256,
+            )
+            if upstream_identity != manifest_identity:
+                expected = None
         commit = (
             _existing_fixture_commit(
                 runner, fixtures_root, case.case_id, expected.benchmark_base_commit
             )
-            if expected is not None and not write_lock
+            if expected is not None
             else None
         )
         if commit is None:

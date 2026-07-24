@@ -266,6 +266,7 @@ def _public_case_values(case: AgentBugCase | BugCase) -> tuple[object, ...]:
         case.issue_title,
         case.issue_description,
         case.target_test,
+        case.regression_tests,
         case.target_test_timeout_seconds,
         case.regression_timeout_seconds,
         case.expected_baseline_failure,

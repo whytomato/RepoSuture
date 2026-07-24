@@ -13,7 +13,7 @@ concurrency:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,10 +36,10 @@ jobs:
       - name: Bootstrap locked upstream fixtures
         run: python benchmarks/real_world/bootstrap_real_world.py
 
-      - name: Validate all three Cases with real Maven and JUnit
+      - name: Validate all eight V2 Cases with real Maven and JUnit
         run: >-
           reposuture validate-benchmark
-          benchmarks/real_world/suites/maven-real-world-v1.yaml
+          benchmarks/real_world/suites/maven-real-world-v2.yaml
           --artifacts-dir .artifacts-real-world-validation
 
       - name: Upload deterministic reports

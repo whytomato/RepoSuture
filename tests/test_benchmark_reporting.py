@@ -17,7 +17,7 @@ from reposuture.benchmark_reporting import (
     write_benchmark_summary,
 )
 from reposuture.benchmark_spec import BenchmarkFingerprint
-from reposuture.reporting import FinalStatus, TestOutcome
+from reposuture.reporting import FinalStatus, PrimaryFailure, TestOutcome
 
 HASH = "a" * 64
 
@@ -238,6 +238,109 @@ def test_json_csv_consistency_markdown_and_secret_absence(
         path.read_text(encoding="utf-8") for path in sorted(tmp_path.iterdir())
     )
     assert "sentinel-super-secret-key" not in all_artifacts
+
+
+def test_provider_rejection_has_no_model_capability_denominator(
+    tmp_path: Path,
+) -> None:
+    legacy = _run(
+        case_id="provider-rejected",
+        run_id="provider-rejected-1",
+        status=FinalStatus.MODEL_API_ERROR,
+        category=FailureCategory.MODEL_API,
+        mode=BenchmarkExecutionMode.LIVE_MODEL,
+        turns=1,
+        tools=0,
+        patches=0,
+        duration=1,
+    )
+    payload = legacy.model_dump(mode="python")
+    payload.update(
+        {
+            "primary_failure": PrimaryFailure.PROVIDER_REJECTED,
+            "provider_accepted": False,
+            "provider_rejected": True,
+            "model_executed": False,
+            "model_tool_call_observed": False,
+            "api_error_count": 1,
+        }
+    )
+    rejected = BenchmarkRunRecord.model_validate(payload)
+
+    summary = _aggregate(
+        [rejected],
+        tmp_path,
+        mode=BenchmarkExecutionMode.LIVE_MODEL,
+    )
+    write_benchmark_summary(summary, tmp_path)
+
+    assert summary.assigned_attempts == 1
+    assert summary.provider_accepted_attempts == 0
+    assert summary.model_executed_attempts == 0
+    assert summary.provider_rejected_attempts == 1
+    assert summary.system_end_to_end_resolution_rate == 0
+    assert summary.capability_resolution_rate is None
+    assert summary.capability_descriptive_wilson_95 is None
+    payload_json = json.loads(
+        (tmp_path / "benchmark-summary.json").read_text(encoding="utf-8")
+    )
+    assert payload_json["capability_resolution_rate"] is None
+    assert payload_json["capability_descriptive_wilson_95"] is None
+    with (tmp_path / "benchmark-runs.csv").open(
+        encoding="utf-8", newline=""
+    ) as stream:
+        csv_row = next(csv.DictReader(stream))
+    assert csv_row["aggregate_capability_resolution_rate"] == "N/A"
+    assert csv_row["aggregate_capability_wilson_95"] == "N/A"
+    assert "N/A" in (tmp_path / "benchmark-report.md").read_text(encoding="utf-8")
+
+
+def test_mixed_provider_rejection_and_execution_use_distinct_rates(
+    tmp_path: Path,
+) -> None:
+    resolved = _run(
+        case_id="resolved",
+        run_id="resolved-live",
+        status=FinalStatus.RESOLVED,
+        category=FailureCategory.RESOLVED,
+        mode=BenchmarkExecutionMode.LIVE_MODEL,
+        turns=2,
+        tools=2,
+        patches=1,
+        duration=2,
+    )
+    rejected_payload = _run(
+        case_id="rejected",
+        run_id="rejected-live",
+        status=FinalStatus.MODEL_API_ERROR,
+        category=FailureCategory.MODEL_API,
+        mode=BenchmarkExecutionMode.LIVE_MODEL,
+        turns=1,
+        tools=0,
+        patches=0,
+        duration=1,
+    ).model_dump(mode="python")
+    rejected_payload.update(
+        {
+            "primary_failure": PrimaryFailure.PROVIDER_REJECTED,
+            "provider_accepted": False,
+            "provider_rejected": True,
+            "model_executed": False,
+            "model_tool_call_observed": False,
+            "api_error_count": 1,
+        }
+    )
+    summary = _aggregate(
+        [resolved, BenchmarkRunRecord.model_validate(rejected_payload)],
+        tmp_path,
+        mode=BenchmarkExecutionMode.LIVE_MODEL,
+    )
+
+    assert summary.system_end_to_end_resolution_rate == 0.5
+    assert summary.provider_acceptance_rate == 0.5
+    assert summary.capability_resolution_rate == 1.0
+    assert summary.system_descriptive_wilson_95 is not None
+    assert summary.capability_descriptive_wilson_95 is not None
 
 
 def test_nonzero_exit_when_all_live_runs_fail(tmp_path: Path) -> None:

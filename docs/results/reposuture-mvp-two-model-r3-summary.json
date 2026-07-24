@@ -13,6 +13,7 @@
   "total_attempts": 36,
   "schedule": "deterministic sequential interleaving",
   "statistical_note": "This is not pass@k. Three attempts per Case remain a small sample, comparisons are descriptive, and the result does not establish universal Java repair capability.",
+  "semantic_correction": "Release 0.4 distinguishes end-to-end Provider availability from model capability. The GPT requests were rejected before any model response entered Agent execution; GPT capability and its Wilson interval are therefore N/A rather than 0%.",
   "catalog_snapshot": {
     "retrieved_at_utc": "2026-07-24T09:22:10Z",
     "models": [
@@ -35,9 +36,25 @@
     {
       "model": "z-ai/glm-5.2",
       "attempts": 18,
+      "assigned_attempts": 18,
+      "provider_accepted_attempts": 18,
+      "model_executed_attempts": 18,
+      "model_tool_call_attempts": 18,
+      "provider_rejected_attempts": 0,
       "resolved_attempts": 18,
       "empirical_resolution_rate": 1.0,
+      "system_end_to_end_resolution_rate": 1.0,
+      "provider_acceptance_rate": 1.0,
+      "capability_resolution_rate": 1.0,
       "descriptive_wilson_95": {
+        "lower": 0.8241207763533425,
+        "upper": 1.0
+      },
+      "system_descriptive_wilson_95": {
+        "lower": 0.8241207763533425,
+        "upper": 1.0
+      },
+      "capability_descriptive_wilson_95": {
         "lower": 0.8241207763533425,
         "upper": 1.0
       },
@@ -82,12 +99,22 @@
     {
       "model": "openai/gpt-5-mini",
       "attempts": 18,
+      "assigned_attempts": 18,
+      "provider_accepted_attempts": 0,
+      "model_executed_attempts": 0,
+      "model_tool_call_attempts": 0,
+      "provider_rejected_attempts": 18,
       "resolved_attempts": 0,
       "empirical_resolution_rate": 0.0,
-      "descriptive_wilson_95": {
+      "system_end_to_end_resolution_rate": 0.0,
+      "provider_acceptance_rate": 0.0,
+      "capability_resolution_rate": null,
+      "descriptive_wilson_95": null,
+      "system_descriptive_wilson_95": {
         "lower": 0.0,
         "upper": 0.17587922364665765
       },
+      "capability_descriptive_wilson_95": null,
       "cases_resolved_at_least_once": 0,
       "cases_resolved_all_three": 0,
       "baseline_reproduction_count": 18,

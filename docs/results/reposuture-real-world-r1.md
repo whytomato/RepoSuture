@@ -43,9 +43,14 @@ details.
 
 | Metric | `z-ai/glm-5.2` | `openai/gpt-5-mini` |
 |---|---:|---:|
+| Assigned attempts | 3 | 3 |
+| Provider accepted / rejected | 3 / 0 | 0 / 3 |
+| Model executed / model tool-call attempts | 3 / 3 | 0 / 0 |
 | Resolved attempts | 2/3 | 0/3 |
-| Empirical attempt rate | 0.667 | 0.000 |
-| Descriptive 95% Wilson interval | [0.208, 0.939] | [0.000, 0.561] |
+| System end-to-end rate | 0.667 | 0.000 |
+| System descriptive 95% Wilson interval | [0.208, 0.939] | [0.000, 0.561] |
+| Capability rate | 0.667 | N/A |
+| Capability descriptive 95% Wilson interval | [0.208, 0.939] | N/A |
 | Cases resolved at least once | 2/3 | 0/3 |
 | Baseline failures reproduced | 3/3 | 3/3 |
 | Target / regression PASS | 3 / 2 | 0 / 0 |
@@ -64,7 +69,8 @@ details.
 As in the MVP matrix, every GPT-5 Mini attempt was rejected by the upstream provider with
 HTTP 403 for provider Terms of Service before a tool call. Those `MODEL_API_ERROR`
 observations are not evidence about repair quality and make a capability head-to-head
-comparison impossible for this run.
+comparison impossible for this run. They are three assigned, three Provider-rejected,
+and zero model-executed attempts; GPT capability and its capability interval are N/A.
 
 ## Complete attempt evidence
 
@@ -73,7 +79,7 @@ Tokens are `input/output/reasoning`.
 | Seq | Model | Case | Final | Target | Regression | Turns | Tools | Patches | Tokens | Duration | Failure | Normalize | Recount |
 |---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---|---|
 | 1 | `openai/gpt-5-mini` | `commons-lang-mid-overflow` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 95.406s | MODEL_API | no | no |
-| 2 | `z-ai/glm-5.2` | `commons-lang-mid-overflow` | AGENT_BUDGET_EXHAUSTED | PASS | FAIL | 18 | 18 | 3 | 189069/13485/13778 | 1456.922s | SEARCH_FAILURE | no | yes |
+| 2 | `z-ai/glm-5.2` | `commons-lang-mid-overflow` | AGENT_BUDGET_EXHAUSTED | PASS | FAIL | 18 | 18 | 3 | 189069/13485/13778 | 1456.922s | REGRESSION_UNRESOLVED | no | yes |
 | 3 | `z-ai/glm-5.2` | `commons-collections-int-value` | RESOLVED | PASS | PASS | 3 | 3 | 1 | 7291/385/342 | 518.313s | RESOLVED | no | no |
 | 4 | `openai/gpt-5-mini` | `commons-collections-int-value` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 54.422s | MODEL_API | no | no |
 | 5 | `openai/gpt-5-mini` | `commons-collections-flat3map-entry` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 62.937s | MODEL_API | no | no |
@@ -84,16 +90,18 @@ candidate passed the target but failed the regression suite, so RepoSuture rever
 returned the failure to the Agent. A later Patch was policy-rejected, another accepted
 candidate again passed the target and failed regression, and the run ended at the fixed
 18-turn budget. The final status remained `AGENT_BUDGET_EXHAUSTED`; the aggregate failure
-taxonomy records `SEARCH_FAILURE` from the final failed search observation. No false
-`RESOLVED` occurred.
+classifier now retains `REGRESSION_UNRESOLVED` as the primary failure. The later
+`SEARCH_TOOL_ERROR` and `BUDGET_EXHAUSTED` remain ordered observed failures rather than
+overwriting stronger verification evidence. No false `RESOLVED` occurred.
 
 The Flat3Map attempt's first malformed Patch failed the strict and recount checks. The Agent
 received the structured rejection, submitted a second Patch, and then passed target and
 regression tests. The accepted Patch did not require recount.
 
 Executed GLM tool usage was `search_code=10`, `read_file=9`, `apply_patch=6`,
-`list_files=1`, and `run_target_test=1`. Final failure categories were `RESOLVED=2` and
-`SEARCH_FAILURE=1` for GLM, plus `MODEL_API=3` for GPT-5 Mini.
+`list_files=1`, and `run_target_test=1`. Terminal statuses were `RESOLVED=2` and
+`AGENT_BUDGET_EXHAUSTED=1` for GLM, plus `MODEL_API_ERROR=3` for GPT-5 Mini. Primary
+failures were `REGRESSION_UNRESOLVED=1` and `PROVIDER_REJECTED=3`.
 
 ## Integrity and limitations
 

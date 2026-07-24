@@ -80,6 +80,16 @@ failure evidence to the Agent. The next model request is preceded by an
 `TARGET_TEST_FAILED`, `REGRESSION_FAILED`, and `CANDIDATE_REVERTED`. A rollback failure is
 terminal infrastructure failure; execution never continues on unknown repository state.
 
+### Single-candidate feedback ablation
+
+Release 0.4 exposes `single-candidate-no-feedback` only as an evaluation baseline. It uses
+the same Agent Runtime and lets the model use the normal read-only exploration tools, but
+permits at most one Patch. A rejected Patch ends the attempt. An accepted Patch still
+receives real target and regression verification, but those post-Patch observations are
+not sent back to the model, no REPLAN occurs, and no second candidate is allowed.
+`RESOLVED` retains the identical deterministic oracle. This isolates the engineering value
+of verification feedback without introducing another Agent or provider path.
+
 ## Budgets and termination
 
 Cases define independent limits for model turns, tool calls, Patch attempts, target-test
@@ -87,6 +97,11 @@ executions, regression executions, API calls, retained outputs, timeouts, and wa
 duration. CLI overrides can lower or replace supported run limits. Rejected Patches consume
 Patch attempts. Exhaustion produces `AGENT_BUDGET_EXHAUSTED`; a model stop, provider error,
 policy rejection, and infrastructure error remain distinct terminal outcomes.
+
+Reports distinguish `terminal_status` (how the loop ended), centralized
+`primary_failure` (the strongest evidence-aware cause), and ordered deduplicated
+`observed_failures` (all relevant events). A late search error or budget terminal cannot
+erase earlier target or regression evidence.
 
 ## Trace, live view, and replay
 

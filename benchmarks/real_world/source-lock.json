@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "sources_manifest_sha256": "4d81de1cd78c3b6ac34f53fc782f22f5e09358a9c2a93073e6dacf45cd3c2788",
-  "generated_by": "reposuture-0.3",
+  "sources_manifest_sha256": "0befa654092ae726b35c59a30df47d70f592db80ab9d1cdfe782f8e8cab0626e",
+  "generated_by": "reposuture-0.4",
   "entries": [
     {
       "case_id": "commons-lang-mid-overflow",
@@ -29,6 +29,51 @@
       "test_overlay_sha256": "18a23c294e73117dedf20f8cefb1380840203fda73a249798cbd638eb8139e17",
       "license_sha256": "b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7",
       "benchmark_base_commit": "91353691e7f1ff57b9127ef640adc2a79d8f3d6e"
+    },
+    {
+      "case_id": "commons-codec-zero-big-integer",
+      "buggy_commit": "b7d744302ecf8b5ae775f28b5889a8af0dd4e82c",
+      "fix_commit": "9400525894adeb9a7edd5bd5ec4fe5eeb774d83b",
+      "production_patch_sha256": "c59345c123df9ec1e01330e12fb78530052a608cb1dd3c0e9992145b21f572b7",
+      "test_overlay_sha256": "c17595143654a7010811653dcd485402be4b5c9133806095364fc481fd50c091",
+      "license_sha256": "b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7",
+      "benchmark_base_commit": "fd6e8c53f73976e1ba89edb982b20de2d2bc90c1"
+    },
+    {
+      "case_id": "commons-text-csv-lone-quote",
+      "buggy_commit": "1bba8e3b90a155afb4e26ac7a8a1483e33d85a57",
+      "fix_commit": "e2eb7d1afddca1fac6f55a125bdf2cd007bda589",
+      "production_patch_sha256": "f4db7c6a7a5afecf22d230983536a44ab809711d7ad3be6a8555e2d2c7f7eb6b",
+      "test_overlay_sha256": "edd9d45beab1625a991ada58964ce9c8010d551d7fc03ec8df1f2832d2e27d0c",
+      "license_sha256": "b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7",
+      "benchmark_base_commit": "340be3b115681662b1b2a4caf86c9635b185f337"
+    },
+    {
+      "case_id": "commons-io-bounded-reader-skip",
+      "buggy_commit": "cfe19ad9dcc9d0c7308e2dc187b2f8b57de21af0",
+      "fix_commit": "e806e6b5926993ec6348a78542b1e1377a765e88",
+      "production_patch_sha256": "194c85febe57378cd718cc58002a652d16f6666af0f6cda7162fcb95d15b26b0",
+      "test_overlay_sha256": "e9026a9ae54e0502a7ea0e19728803df8cb4d33acc7be610e4a06254ddda28e7",
+      "license_sha256": "c1d1a38c99c48ccad170890ade6066e2e240bb6ce59861d4eb7f672eddd2a4c6",
+      "benchmark_base_commit": "ace86c17f2f6402a681537a0c41d6e143ae356d9"
+    },
+    {
+      "case_id": "commons-csv-supplementary-delimiter",
+      "buggy_commit": "ed8dbf25ad73856cfa10cba4f5e9855fdcae0d88",
+      "fix_commit": "1d89cd5f0aa454ef3853dfc7528242399ef26b74",
+      "production_patch_sha256": "53b3e39b18e54427057d902d0b73216df46850046cec231104e27a6d05bd10eb",
+      "test_overlay_sha256": "5c28be06c101dfa276d6830e1011c72e127da31960887dabca58308b2cf83569",
+      "license_sha256": "b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7",
+      "benchmark_base_commit": "b2457bb1ffc1738ae02d75530d086f4fff5df536"
+    },
+    {
+      "case_id": "commons-beanutils-nondouble-number",
+      "buggy_commit": "a62b1d1cc1d67e8caf38133c7f81c91d08e5f476",
+      "fix_commit": "068d12326d95d153b42b0f60d6dfb41a033fc27a",
+      "production_patch_sha256": "6c2e2d9892829d08860bf9a715572860f005fbee2c9e8673faffec4763e28b8e",
+      "test_overlay_sha256": "a528e9bead6233c301c56dcb45fca63dfb13b3a4afb8803948d075c435382a83",
+      "license_sha256": "b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7",
+      "benchmark_base_commit": "faaad2e01e7e0a2b9dc2f6f1bbbd8510e34c7a04"
     }
   ]
 }

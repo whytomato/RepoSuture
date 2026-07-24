@@ -10,7 +10,13 @@ import yaml
 from reposuture.agent import AgentResponse, FakeLLM, ToolCall
 from reposuture.process import ProcessResult, ProcessRunner
 from reposuture.repair import repair_case
-from reposuture.reporting import FinalStatus, TestOutcome
+from reposuture.reporting import (
+    AgentExecutionMode,
+    FinalStatus,
+    ObservedFailure,
+    PrimaryFailure,
+    TestOutcome,
+)
 from reposuture.trajectory import LiveTrajectoryRenderer, TrajectoryView, load_replay_run
 from reposuture.workspace import ArtifactContainmentError
 
@@ -398,6 +404,41 @@ def test_regression_failure_allows_second_complete_patch_to_resolve(
         "REGRESSION_FAILED",
         "CANDIDATE_REVERTED",
     ]
+    assert _git_status(repository)[1] == ""
+
+
+@pytest.mark.integration
+def test_single_candidate_mode_withholds_feedback_and_disallows_second_patch(
+    tmp_path: Path,
+) -> None:
+    repository, case_path = _initialize_case(tmp_path)
+    fake = FakeLLM(
+        [
+            _patch_call("single-break-1", REGRESSION_BREAKING_PATCH),
+            _patch_call("single-must-not-run-2", GOLDEN_PATCH.read_text(encoding="utf-8")),
+        ]
+    )
+
+    report = repair_case(
+        case_path,
+        tmp_path / "artifacts",
+        llm_client=fake,
+        execution_mode=AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK,
+    )
+
+    assert report.execution_mode is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK
+    assert report.terminal_status is FinalStatus.REGRESSION_FAILED
+    assert report.primary_failure is PrimaryFailure.REGRESSION_UNRESOLVED
+    assert report.total_patch_attempts == 1
+    assert report.target_test_execution_count == 2
+    assert report.regression_execution_count == 1
+    assert fake.chat_count == 1
+    assert report.patched_target_test_result.outcome is TestOutcome.PASS
+    assert report.regression_result.outcome is TestOutcome.FAIL
+    assert ObservedFailure.REGRESSION_FAILED in report.observed_failures
+    assert ObservedFailure.CANDIDATE_REVERTED in report.observed_failures
+    trace = Path(report.artifacts["trace"]).read_text(encoding="utf-8")
+    assert "agent_replan_requested" not in trace
     assert _git_status(repository)[1] == ""
 
 

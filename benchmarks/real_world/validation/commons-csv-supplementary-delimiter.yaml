@@ -1,0 +1,23 @@
+schema_version: 1
+id: commons-csv-supplementary-delimiter
+repository: ../.cache/fixtures/commons-csv-supplementary-delimiter
+base_commit: b2457bb1ffc1738ae02d75530d086f4fff5df536
+issue_title: Supplementary CSV delimiters corrupt byte-position tracking
+issue_description: >-
+  Parsing records with a multi-character delimiter that contains a supplementary
+  Unicode character can fail while tracking byte positions, or report the wrong
+  start offset for a later record. Ordinary and split-buffer delimiters must remain valid.
+target_test:
+  class_name: org.apache.commons.csv.CSVParserTest
+  method_name: testGetBytePositionMultiCharacterDelimiterWithSupplementaryCharacter
+regression_tests:
+  - class_name: org.apache.commons.csv.ExtendedBufferedReaderTest
+    method_name: testReadChar
+  - class_name: org.apache.commons.csv.ExtendedBufferedReaderTest
+    method_name: testReadingSupplementaryCharacterTracksBytes
+  - class_name: org.apache.commons.csv.ExtendedBufferedReaderTest
+    method_name: testReadLookahead1
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+golden_patch: patches/commons-csv-supplementary-delimiter.patch
+expected_baseline_failure: test_failure

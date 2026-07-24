@@ -1,0 +1,58 @@
+schema_version: 1
+suite_id: maven-real-world-v2
+description: >-
+  Eight locked real upstream Java/Maven defects from seven Apache Commons
+  repositories, reconstructed from buggy commits plus upstream test-only overlays.
+default_runs_per_case: 1
+default_agent_budgets:
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+tags: [java, maven, real-world, deterministic, upstream, v2]
+notes: >-
+  Upstream fix provenance and production Patches remain validation-only. The locked
+  feedback-ablation subset is commons-lang-mid-overflow,
+  commons-collections-int-value, commons-codec-zero-big-integer,
+  commons-io-bounded-reader-skip, commons-csv-supplementary-delimiter, and
+  commons-beanutils-nondouble-number.
+cases:
+  - id: commons-lang-mid-overflow
+    agent_case: ../cases/commons-lang-mid-overflow.yaml
+    validation_case: ../validation/commons-lang-mid-overflow.yaml
+    tags: [apache-commons-lang, boundary-arithmetic, cross-file, original-v1]
+  - id: commons-collections-int-value
+    agent_case: ../cases/commons-collections-int-value.yaml
+    validation_case: ../validation/commons-collections-int-value.yaml
+    tags: [apache-commons-collections, data-conversion, original-v1]
+  - id: commons-collections-flat3map-entry
+    agent_case: ../cases/commons-collections-flat3map-entry.yaml
+    validation_case: ../validation/commons-collections-flat3map-entry.yaml
+    tags: [apache-commons-collections, collection-semantics, regression-sensitive, original-v1]
+  - id: commons-codec-zero-big-integer
+    agent_case: ../cases/commons-codec-zero-big-integer.yaml
+    validation_case: ../validation/commons-codec-zero-big-integer.yaml
+    tags: [apache-commons-codec, binary-encoding, regression-sensitive, new-v2]
+  - id: commons-text-csv-lone-quote
+    agent_case: ../cases/commons-text-csv-lone-quote.yaml
+    validation_case: ../validation/commons-text-csv-lone-quote.yaml
+    tags: [apache-commons-text, csv-parsing, new-v2]
+  - id: commons-io-bounded-reader-skip
+    agent_case: ../cases/commons-io-bounded-reader-skip.yaml
+    validation_case: ../validation/commons-io-bounded-reader-skip.yaml
+    tags: [apache-commons-io, range-accounting, cross-component, regression-sensitive, new-v2]
+  - id: commons-csv-supplementary-delimiter
+    agent_case: ../cases/commons-csv-supplementary-delimiter.yaml
+    validation_case: ../validation/commons-csv-supplementary-delimiter.yaml
+    tags: [apache-commons-csv, unicode-byte-tracking, cross-component, new-v2]
+  - id: commons-beanutils-nondouble-number
+    agent_case: ../cases/commons-beanutils-nondouble-number.yaml
+    validation_case: ../validation/commons-beanutils-nondouble-number.yaml
+    tags: [apache-commons-beanutils, numeric-conversion, cross-component, new-v2]

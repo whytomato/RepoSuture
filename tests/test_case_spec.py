@@ -76,6 +76,64 @@ def test_load_case_validates_and_resolves_paths(tmp_path: Path) -> None:
     )
 
 
+def test_case_accepts_bounded_unrelated_regression_tests(tmp_path: Path) -> None:
+    data = valid_case_data()
+    data["regression_tests"] = [
+        {
+            "class_name": "com.example.UserRegistrationServiceTest",
+            "method_name": "registersValidEmail",
+        },
+        {
+            "class_name": "com.example.UserRegistrationServiceTest",
+            "method_name": "rejectsBlankEmail",
+        },
+    ]
+    case_path = tmp_path / "case.yaml"
+    write_case(case_path, data)
+
+    loaded = load_case(case_path)
+
+    assert [test.maven_selector for test in loaded.regression_tests or ()] == [
+        "com.example.UserRegistrationServiceTest#registersValidEmail",
+        "com.example.UserRegistrationServiceTest#rejectsBlankEmail",
+    ]
+
+
+@pytest.mark.parametrize(
+    "regression_tests",
+    [
+        [],
+        [
+            {
+                "class_name": "com.example.UserRegistrationServiceTest",
+                "method_name": "shouldRejectNullEmail",
+            }
+        ],
+        [
+            {
+                "class_name": "com.example.UserRegistrationServiceTest",
+                "method_name": "registersValidEmail",
+            },
+            {
+                "class_name": "com.example.UserRegistrationServiceTest",
+                "method_name": "registersValidEmail",
+            },
+        ],
+    ],
+)
+def test_case_rejects_empty_target_or_duplicate_regression_scope(
+    tmp_path: Path,
+    regression_tests: list[dict[str, str]],
+) -> None:
+    data = valid_case_data()
+    data["regression_tests"] = regression_tests
+    case_path = tmp_path / "invalid.yaml"
+    write_case(case_path, data)
+
+    with pytest.raises(CaseValidationError):
+        load_case(case_path)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

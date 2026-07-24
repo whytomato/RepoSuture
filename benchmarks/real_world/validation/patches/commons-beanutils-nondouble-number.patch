@@ -1,0 +1,17 @@
+diff --git a/src/main/java/org/apache/commons/beanutils2/locale/converters/DoubleLocaleConverter.java b/src/main/java/org/apache/commons/beanutils2/locale/converters/DoubleLocaleConverter.java
+index c0ec0994..bec57800 100644
+--- a/src/main/java/org/apache/commons/beanutils2/locale/converters/DoubleLocaleConverter.java
++++ b/src/main/java/org/apache/commons/beanutils2/locale/converters/DoubleLocaleConverter.java
+@@ -71,9 +71,9 @@ public class DoubleLocaleConverter extends DecimalLocaleConverter<Double> {
+     @Override
+     protected Double parse(final Object value, final String pattern) throws ParseException {
+         final Number result = super.parse(value, pattern);
+-        if (result instanceof Long) {
+-            return Double.valueOf(result.doubleValue());
++        if (result == null || result instanceof Double) {
++            return (Double) result;
+         }
+-        return (Double) result;
++        return Double.valueOf(result.doubleValue());
+     }
+ }

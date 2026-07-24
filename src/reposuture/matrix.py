@@ -6,7 +6,6 @@ import csv
 import hashlib
 import io
 import json
-import math
 import os
 import statistics
 import uuid
@@ -34,9 +33,12 @@ from reposuture.benchmark_reporting import (
     BenchmarkExecutionMode,
     BenchmarkRunRecord,
     BenchmarkSummary,
+    DescriptiveWilsonInterval,
     FailureCategory,
     PerCaseAggregate,
     aggregate_benchmark_runs,
+    aggregate_csv_metrics,
+    wilson_interval,
     write_benchmark_summary,
 )
 from reposuture.benchmark_spec import (
@@ -48,7 +50,7 @@ from reposuture.benchmark_spec import (
 )
 from reposuture.process import ProcessRunner
 from reposuture.repair import ProgressCallback, repair_case
-from reposuture.reporting import FinalStatus, RunReport
+from reposuture.reporting import FinalStatus, ObservedFailure, PrimaryFailure, RunReport
 from reposuture.trajectory import load_replay_run
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
@@ -73,7 +75,7 @@ class MatrixPlan(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     suite_id: str
     benchmark_fingerprint: Sha256
     execution_mode: BenchmarkExecutionMode
@@ -81,6 +83,7 @@ class MatrixPlan(BaseModel):
     models: list[str] = Field(min_length=2)
     selected_case_ids: list[str] = Field(min_length=1)
     runs_per_case: int = Field(ge=1, le=20)
+    case_run_counts: dict[str, int] = Field(default_factory=dict)
     schedule: Literal["interleaved"] = "interleaved"
     total_attempts: int = Field(ge=1)
     budget_values: dict[str, int]
@@ -89,11 +92,29 @@ class MatrixPlan(BaseModel):
     random_seed: int | None = None
     items: list[MatrixPlanItem] = Field(min_length=1)
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_legacy_case_counts(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        updated = dict(value)
+        if not updated.get("case_run_counts"):
+            selected = updated.get("selected_case_ids", [])
+            runs = updated.get("runs_per_case", 1)
+            updated["case_run_counts"] = {case_id: runs for case_id in selected}
+        return updated
+
     @model_validator(mode="after")
     def validate_plan(self) -> Self:
         if len(self.models) != len(set(self.models)):
             raise ValueError("matrix models must be unique")
-        expected = len(self.models) * len(self.selected_case_ids) * self.runs_per_case
+        if set(self.case_run_counts) != set(self.selected_case_ids):
+            raise ValueError("matrix case-run counts must cover selected Cases exactly")
+        if any(not 1 <= count <= 20 for count in self.case_run_counts.values()):
+            raise ValueError("matrix per-Case run counts must be between 1 and 20")
+        if self.runs_per_case != max(self.case_run_counts.values()):
+            raise ValueError("runs_per_case must equal the maximum per-Case run count")
+        expected = len(self.models) * sum(self.case_run_counts.values())
         if self.total_attempts != expected or len(self.items) != expected:
             raise ValueError("matrix attempt total does not match models, Cases, and runs")
         if [item.sequence for item in self.items] != list(range(1, expected + 1)):
@@ -134,24 +155,20 @@ class MatrixCompletionManifest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     suite_id: str
     benchmark_fingerprint: Sha256
     execution_mode: BenchmarkExecutionMode
     requested_provider: str
     models: list[str] = Field(min_length=2)
     runs_per_case: int = Field(ge=1, le=20)
+    case_run_counts: dict[str, int] = Field(default_factory=dict)
     project_git_commit: str
     project_worktree_dirty: bool
     artifact_sha256: dict[str, Sha256] = Field(min_length=7)
 
 
-class WilsonInterval(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    confidence: float = Field(default=0.95, ge=0.95, le=0.95)
-    lower: float = Field(ge=0, le=1)
-    upper: float = Field(ge=0, le=1)
+WilsonInterval = DescriptiveWilsonInterval
 
 
 class MatrixModelMetrics(BaseModel):
@@ -161,13 +178,31 @@ class MatrixModelMetrics(BaseModel):
 
     model: str
     total_attempts: int = Field(ge=0)
+    assigned_attempts: int = Field(default=0, ge=0)
+    provider_accepted_attempts: int = Field(default=0, ge=0)
+    model_executed_attempts: int = Field(default=0, ge=0)
+    model_tool_call_attempts: int = Field(default=0, ge=0)
+    provider_rejected_attempts: int = Field(default=0, ge=0)
+    infrastructure_failed_attempts: int = Field(default=0, ge=0)
     resolved_attempts: int = Field(ge=0)
     empirical_resolution_rate: float = Field(ge=0, le=1)
-    descriptive_wilson_95: WilsonInterval
+    descriptive_wilson_95: WilsonInterval | None
+    system_end_to_end_resolution_rate: float = Field(default=0.0, ge=0, le=1)
+    provider_acceptance_rate: float = Field(default=0.0, ge=0, le=1)
+    capability_resolution_rate: float | None = Field(default=None, ge=0, le=1)
+    system_descriptive_wilson_95: WilsonInterval | None = None
+    capability_descriptive_wilson_95: WilsonInterval | None = None
     cases_resolved_at_least_once: int = Field(ge=0)
     cases_resolved_all_runs: int = Field(ge=0)
     per_case: list[PerCaseAggregate]
     failure_counts_by_category: dict[FailureCategory, int]
+    terminal_status_distribution: dict[FinalStatus, int] = Field(default_factory=dict)
+    primary_failure_distribution: dict[PrimaryFailure, int] = Field(
+        default_factory=dict
+    )
+    observed_failure_occurrence_counts: dict[ObservedFailure, int] = Field(
+        default_factory=dict
+    )
     target_test_pass_count: int = Field(ge=0)
     regression_pass_count: int = Field(ge=0)
     total_model_turns: int = Field(ge=0)
@@ -198,7 +233,7 @@ class MatrixModelMetrics(BaseModel):
 class MatrixSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     suite_id: str
     benchmark_fingerprint: BenchmarkFingerprint
     execution_mode: BenchmarkExecutionMode
@@ -206,6 +241,7 @@ class MatrixSummary(BaseModel):
     provider: str
     models: list[str]
     runs_per_case: int = Field(ge=1)
+    case_run_counts: dict[str, int] = Field(default_factory=dict)
     total_attempts: int = Field(ge=0)
     schedule: list[MatrixPlanItem]
     budget_values: dict[str, int]
@@ -215,6 +251,23 @@ class MatrixSummary(BaseModel):
     per_model: list[MatrixModelMetrics]
     runs: list[BenchmarkRunRecord]
     artifacts: dict[str, str]
+
+    @model_validator(mode="before")
+    @classmethod
+    def populate_legacy_case_counts(cls, value: object) -> object:
+        if not isinstance(value, dict):
+            return value
+        updated = dict(value)
+        if not updated.get("case_run_counts"):
+            case_ids = {
+                item.get("case_id")
+                for item in updated.get("schedule", [])
+                if isinstance(item, dict) and isinstance(item.get("case_id"), str)
+            }
+            updated["case_run_counts"] = {
+                case_id: updated.get("runs_per_case", 1) for case_id in case_ids
+            }
+        return updated
 
     @model_validator(mode="after")
     def validate_summary(self) -> Self:
@@ -227,28 +280,6 @@ class MatrixSummary(BaseModel):
         if any(run.execution_mode is not self.execution_mode for run in self.runs):
             raise ValueError("matrix cannot mix scripted and live observations")
         return self
-
-
-def wilson_interval(successes: int, attempts: int) -> WilsonInterval:
-    """Return the descriptive 95% Wilson score interval for a binomial proportion."""
-
-    if successes < 0 or attempts < 0 or successes > attempts:
-        raise ValueError("Wilson inputs require 0 <= successes <= attempts")
-    if attempts == 0:
-        return WilsonInterval(lower=0.0, upper=0.0)
-    z = 1.959963984540054
-    proportion = successes / attempts
-    denominator = 1 + z * z / attempts
-    center = (proportion + z * z / (2 * attempts)) / denominator
-    margin = (
-        z
-        * math.sqrt(
-            proportion * (1 - proportion) / attempts
-            + z * z / (4 * attempts * attempts)
-        )
-        / denominator
-    )
-    return WilsonInterval(lower=max(0.0, center - margin), upper=min(1.0, center + margin))
 
 
 def _model_directory(model: str) -> str:
@@ -282,6 +313,7 @@ def build_matrix_plan(
     selected_cases: Sequence[LoadedBenchmarkCase],
     models: Sequence[str],
     runs_per_case: int,
+    case_run_counts: dict[str, int] | None = None,
     provider: str,
     budget_values: dict[str, int],
     project_git_commit: str,
@@ -297,14 +329,32 @@ def build_matrix_plan(
         raise BenchmarkSuiteError("benchmark-matrix model identifiers must be unique")
     if not 1 <= runs_per_case <= 20:
         raise BenchmarkSuiteError("runs_per_case must be between 1 and 20")
+    selected_ids = [loaded.reference.id for loaded in selected_cases]
+    effective_counts = {case_id: runs_per_case for case_id in selected_ids}
+    overrides = dict(case_run_counts or {})
+    unknown_overrides = set(overrides) - set(selected_ids)
+    if unknown_overrides:
+        raise BenchmarkSuiteError(
+            "per-Case run count references an unselected Case: "
+            + ", ".join(sorted(unknown_overrides))
+        )
+    effective_counts.update(overrides)
+    if any(
+        isinstance(count, bool) or not isinstance(count, int) or not 1 <= count <= 20
+        for count in effective_counts.values()
+    ):
+        raise BenchmarkSuiteError("per-Case run counts must be between 1 and 20")
+    maximum_runs = max(effective_counts.values())
     mode = (
         BenchmarkExecutionMode.SCRIPTED_OFFLINE
         if provider == "scripted"
         else BenchmarkExecutionMode.LIVE_MODEL
     )
     items: list[MatrixPlanItem] = []
-    for run_number in range(1, runs_per_case + 1):
+    for run_number in range(1, maximum_runs + 1):
         for case_index, loaded in enumerate(selected_cases):
+            if run_number > effective_counts[loaded.reference.id]:
+                continue
             ordered_models = list(normalized_models)
             if (run_number + case_index) % 2 == 1:
                 ordered_models.reverse()
@@ -334,8 +384,9 @@ def build_matrix_plan(
         execution_mode=mode,
         provider=provider,
         models=normalized_models,
-        selected_case_ids=[loaded.reference.id for loaded in selected_cases],
-        runs_per_case=runs_per_case,
+        selected_case_ids=selected_ids,
+        runs_per_case=maximum_runs,
+        case_run_counts=effective_counts,
         total_attempts=len(items),
         budget_values=budget_values,
         project_git_commit=project_git_commit,
@@ -351,6 +402,7 @@ def prepare_matrix_plan(
     provider: str,
     models: Sequence[str],
     runs_per_case: int,
+    case_run_counts: dict[str, int] | None = None,
     case_ids: Sequence[str] | None = None,
     random_seed: int | None = None,
     max_turns: int | None = None,
@@ -382,6 +434,7 @@ def prepare_matrix_plan(
         selected_cases=selected,
         models=models,
         runs_per_case=runs_per_case,
+        case_run_counts=case_run_counts,
         provider=provider,
         budget_values=budgets,
         project_git_commit=commit,
@@ -442,6 +495,7 @@ def _completion_manifest(root: Path, plan: MatrixPlan) -> MatrixCompletionManife
         requested_provider=plan.provider,
         models=plan.models,
         runs_per_case=plan.runs_per_case,
+        case_run_counts=plan.case_run_counts,
         project_git_commit=plan.project_git_commit,
         project_worktree_dirty=plan.project_worktree_dirty,
         artifact_sha256=artifacts,
@@ -472,6 +526,7 @@ def _validate_completion_manifest(root: Path, plan: MatrixPlan) -> None:
         plan.provider,
         plan.models,
         plan.runs_per_case,
+        plan.case_run_counts,
         plan.project_git_commit,
         plan.project_worktree_dirty,
     )
@@ -482,6 +537,7 @@ def _validate_completion_manifest(root: Path, plan: MatrixPlan) -> None:
         manifest.requested_provider,
         manifest.models,
         manifest.runs_per_case,
+        manifest.case_run_counts,
         manifest.project_git_commit,
         manifest.project_worktree_dirty,
     )
@@ -610,9 +666,14 @@ def _model_metrics(
     summary: BenchmarkSummary,
     *,
     model_root: Path,
-    runs_per_case: int,
+    case_run_counts: dict[str, int] | None = None,
+    runs_per_case: int | None = None,
 ) -> MatrixModelMetrics:
     runs = summary.runs
+    effective_case_runs = case_run_counts or {
+        item.case_id: runs_per_case or summary.runs_per_case
+        for item in summary.per_case
+    }
     resolved = summary.resolved_attempts
     generated = sum(run.generated_tool_calls for run in runs)
     discarded = sum(run.discarded_extra_tool_calls for run in runs)
@@ -622,16 +683,33 @@ def _model_metrics(
     return MatrixModelMetrics(
         model=model,
         total_attempts=len(runs),
+        assigned_attempts=summary.assigned_attempts,
+        provider_accepted_attempts=summary.provider_accepted_attempts,
+        model_executed_attempts=summary.model_executed_attempts,
+        model_tool_call_attempts=summary.model_tool_call_attempts,
+        provider_rejected_attempts=summary.provider_rejected_attempts,
+        infrastructure_failed_attempts=summary.infrastructure_failed_attempts,
         resolved_attempts=resolved,
         empirical_resolution_rate=resolved / len(runs) if runs else 0.0,
         descriptive_wilson_95=wilson_interval(resolved, len(runs)),
+        system_end_to_end_resolution_rate=summary.system_end_to_end_resolution_rate,
+        provider_acceptance_rate=summary.provider_acceptance_rate,
+        capability_resolution_rate=summary.capability_resolution_rate,
+        system_descriptive_wilson_95=summary.system_descriptive_wilson_95,
+        capability_descriptive_wilson_95=summary.capability_descriptive_wilson_95,
         cases_resolved_at_least_once=summary.cases_resolved_at_least_once,
         cases_resolved_all_runs=sum(
-            item.attempt_count == runs_per_case and item.success_count == runs_per_case
+            item.attempt_count == effective_case_runs[item.case_id]
+            and item.success_count == effective_case_runs[item.case_id]
             for item in summary.per_case
         ),
         per_case=summary.per_case,
         failure_counts_by_category=summary.failure_counts_by_category,
+        terminal_status_distribution=summary.terminal_status_distribution,
+        primary_failure_distribution=summary.primary_failure_distribution,
+        observed_failure_occurrence_counts=(
+            summary.observed_failure_occurrence_counts
+        ),
         target_test_pass_count=summary.target_test_pass_count,
         regression_pass_count=summary.regression_pass_count,
         total_model_turns=sum(run.total_model_turns for run in runs),
@@ -673,6 +751,7 @@ MATRIX_CSV_FIELDS = ("schedule_sequence", *BENCHMARK_CSV_FIELDS)
 
 def _matrix_csv(summary: MatrixSummary) -> str:
     sequence_by_run = {item.run_id: item.sequence for item in summary.schedule}
+    metrics_by_model = {item.model: item for item in summary.per_model}
     stream = io.StringIO(newline="")
     writer = csv.DictWriter(stream, fieldnames=MATRIX_CSV_FIELDS, lineterminator="\n")
     writer.writeheader()
@@ -681,6 +760,19 @@ def _matrix_csv(summary: MatrixSummary) -> str:
         values["schedule_sequence"] = sequence_by_run[run.run_id]
         values["tool_calls_by_name"] = json.dumps(
             values["tool_calls_by_name"], sort_keys=True, separators=(",", ":")
+        )
+        values["observed_failures"] = json.dumps(
+            values["observed_failures"], separators=(",", ":")
+        )
+        metrics = metrics_by_model[run.model]
+        values.update(
+            aggregate_csv_metrics(
+                assigned_attempts=metrics.assigned_attempts,
+                provider_accepted_attempts=metrics.provider_accepted_attempts,
+                model_executed_attempts=metrics.model_executed_attempts,
+                model_tool_call_attempts=metrics.model_tool_call_attempts,
+                resolved_attempts=metrics.resolved_attempts,
+            )
         )
         writer.writerow({name: values.get(name) for name in MATRIX_CSV_FIELDS})
     return stream.getvalue()
@@ -691,34 +783,82 @@ def matrix_markdown(summary: MatrixSummary) -> str:
         f"# RepoSuture Cross-Model Matrix: {summary.suite_id}",
         "",
         f"- Attempts: {summary.total_attempts}",
-        f"- Runs per Case/model: {summary.runs_per_case}",
+        "- Runs per Case/model: "
+        + ", ".join(
+            f"`{case_id}`={count}"
+            for case_id, count in summary.case_run_counts.items()
+        ),
         f"- Provider selector: `{summary.requested_provider}`; runtime provider: "
         f"`{summary.provider}`",
         f"- Benchmark fingerprint: `{summary.benchmark_fingerprint.value}`",
         f"- RepoSuture commit: `{summary.project_git_commit}` "
         f"(dirty: {str(summary.project_worktree_dirty).lower()})",
         "- Schedule: deterministic, sequential, interleaved",
-        "- Interval: descriptive 95% Wilson interval; this is not pass@k.",
+        "- Intervals: separate descriptive 95% Wilson intervals for system and "
+        "model-capability denominators; this is not pass@k.",
         "",
         "## Side-by-side descriptive comparison",
         "",
-        "| Model | Resolved | Empirical rate | Wilson 95% | Cases >=1 | Cases all runs | "
-        "Generated tools | Discarded | Tokens | Avg latency |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| Model | System resolved | System Wilson 95% | Provider accepted | "
+        "Model executed | Capability rate | Capability Wilson 95% | Cases >=1 |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for model_metrics in summary.per_model:
-        interval = model_metrics.descriptive_wilson_95
+        interval = model_metrics.capability_descriptive_wilson_95
+        system_interval = model_metrics.system_descriptive_wilson_95
+        capability_rate = (
+            f"{model_metrics.capability_resolution_rate:.3f}"
+            if model_metrics.capability_resolution_rate is not None
+            else "N/A"
+        )
+        interval_text = (
+            f"[{interval.lower:.3f}, {interval.upper:.3f}]"
+            if interval is not None
+            else "N/A"
+        )
+        system_interval_text = (
+            f"[{system_interval.lower:.3f}, {system_interval.upper:.3f}]"
+            if system_interval is not None
+            else "N/A"
+        )
         lines.append(
             f"| `{model_metrics.model}` | "
-            f"{model_metrics.resolved_attempts}/{model_metrics.total_attempts} | "
-            f"{model_metrics.empirical_resolution_rate:.3f} | "
-            f"[{interval.lower:.3f}, {interval.upper:.3f}] | "
-            f"{model_metrics.cases_resolved_at_least_once} | "
-            f"{model_metrics.cases_resolved_all_runs} | "
-            f"{model_metrics.generated_tool_calls} | "
+            f"{model_metrics.resolved_attempts}/{model_metrics.assigned_attempts} | "
+            f"{system_interval_text} | "
+            f"{model_metrics.provider_accepted_attempts}/"
+            f"{model_metrics.assigned_attempts} | "
+            f"{model_metrics.model_executed_attempts}/"
+            f"{model_metrics.assigned_attempts} | "
+            f"{capability_rate} | {interval_text} | "
+            f"{model_metrics.cases_resolved_at_least_once} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Efficiency and protocol metrics",
+            "",
+            "| Model | Turns | Requests | Tools generated/executed/discarded | "
+            "Patches/rejected | Normalize/recount | Tokens in/out/reasoning | "
+            "Avg model/test/wall seconds |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
+    for model_metrics in summary.per_model:
+        lines.append(
+            f"| `{model_metrics.model}` | {model_metrics.total_model_turns} | "
+            f"{model_metrics.total_model_requests} | "
+            f"{model_metrics.generated_tool_calls}/"
+            f"{model_metrics.executed_tool_calls}/"
             f"{model_metrics.discarded_extra_tool_calls} | "
-            f"{model_metrics.input_tokens + model_metrics.output_tokens} | "
-            f"{model_metrics.average_model_latency_seconds:.2f}s |"
+            f"{model_metrics.patch_attempts}/"
+            f"{model_metrics.rejected_patch_attempts} | "
+            f"{model_metrics.normalization_used_attempts}/"
+            f"{model_metrics.recount_used_attempts} | "
+            f"{model_metrics.input_tokens}/{model_metrics.output_tokens}/"
+            f"{model_metrics.reasoning_tokens} | "
+            f"{model_metrics.average_model_latency_seconds:.2f}/"
+            f"{model_metrics.average_test_duration_seconds:.2f}/"
+            f"{model_metrics.average_wall_clock_duration_seconds:.2f} |"
         )
     lines.extend(
         [
@@ -754,14 +894,38 @@ def matrix_markdown(summary: MatrixSummary) -> str:
             f"`{plan_item.case_id}` | {plan_item.run_number} | "
             f"{run.final_status.value} | "
             f"{run.target_test_result.value} | {run.regression_result.value} | "
-            f"{run.failure_category.value} |"
+            f"{run.primary_failure.value if run.primary_failure else 'none'} |"
+        )
+    lines.extend(["", "## Failure distributions", ""])
+    for model_metrics in summary.per_model:
+        terminal = ", ".join(
+            f"{key.value}={value}"
+            for key, value in model_metrics.terminal_status_distribution.items()
+            if value
+        ) or "none"
+        primary = ", ".join(
+            f"{key.value}={value}"
+            for key, value in model_metrics.primary_failure_distribution.items()
+            if value
+        ) or "none"
+        observed = ", ".join(
+            f"{key.value}={value}"
+            for key, value in model_metrics.observed_failure_occurrence_counts.items()
+            if value
+        ) or "none"
+        lines.extend(
+            [
+                f"- `{model_metrics.model}` terminal: {terminal}",
+                f"- `{model_metrics.model}` primary: {primary}",
+                f"- `{model_metrics.model}` observed (non-exclusive): {observed}",
+            ]
         )
     lines.extend(
         [
             "",
-            "Three attempts per Case remain a small sample. These comparisons are "
-            "descriptive, not statistically conclusive, and do not establish universal "
-            "Java repair capability.",
+            "Repeated original Cases have only three attempts and new breadth Cases have "
+            "one. These comparisons are descriptive, not statistically conclusive, and "
+            "do not establish universal Java repair capability.",
             "",
         ]
     )
@@ -781,6 +945,7 @@ def run_benchmark_matrix(
     provider: str,
     models: Sequence[str],
     runs_per_case: int,
+    case_run_counts: dict[str, int] | None = None,
     case_ids: Sequence[str] | None = None,
     resume: bool = False,
     continue_on_failure: bool = True,
@@ -805,6 +970,7 @@ def run_benchmark_matrix(
         provider=provider,
         models=models,
         runs_per_case=runs_per_case,
+        case_run_counts=case_run_counts,
         case_ids=case_ids,
         random_seed=random_seed,
         max_turns=max_turns,
@@ -852,8 +1018,8 @@ def run_benchmark_matrix(
     by_case = {loaded.reference.id: loaded for loaded in selected}
     records: list[BenchmarkRunRecord] = []
     emit(
-        f"Matrix: {len(selected)} Cases x {runs_per_case} runs x "
-        f"{len(plan.models)} models = {plan.total_attempts} attempts"
+        f"Matrix: {len(selected)} Cases, {sum(plan.case_run_counts.values())} "
+        f"Case-runs x {len(plan.models)} models = {plan.total_attempts} attempts"
     )
     stopped = False
     for item in plan.items:
@@ -990,8 +1156,9 @@ def run_benchmark_matrix(
             execution_mode=plan.execution_mode,
             provider=runtime_provider,
             model=model,
-            runs_per_case=runs_per_case,
+            runs_per_case=plan.runs_per_case,
             selected_case_ids=plan.selected_case_ids,
+            case_run_counts=plan.case_run_counts,
             runs=model_runs,
             reproducibility=reproducibility,
             artifacts=model_artifacts,
@@ -1003,7 +1170,7 @@ def run_benchmark_matrix(
                 model,
                 model_summary,
                 model_root=model_root,
-                runs_per_case=runs_per_case,
+                case_run_counts=plan.case_run_counts,
             )
         )
     artifacts = {
@@ -1020,7 +1187,8 @@ def run_benchmark_matrix(
         requested_provider=provider,
         provider=runtime_provider,
         models=plan.models,
-        runs_per_case=runs_per_case,
+        runs_per_case=plan.runs_per_case,
+        case_run_counts=plan.case_run_counts,
         total_attempts=len(records),
         schedule=plan.items,
         budget_values=plan.budget_values,

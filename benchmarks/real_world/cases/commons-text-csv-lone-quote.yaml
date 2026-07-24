@@ -1,0 +1,37 @@
+schema_version: 2
+workflow: agent_repair
+id: commons-text-csv-lone-quote
+repository: ../.cache/fixtures/commons-text-csv-lone-quote
+base_commit: 340be3b115681662b1b2a4caf86c9635b185f337
+issue_title: CSV unescaping crashes on a lone quote
+issue_description: >-
+  Unescaping a one-character input containing only a quote throws an index error.
+  Such an input is not a complete quoted CSV field and must be returned unchanged
+  without changing established quoted-field behavior.
+target_test:
+  class_name: org.apache.commons.text.translate.CsvTranslatorsTest
+  method_name: testCsvUnEscaperSingleQuoteTest
+regression_tests:
+  - class_name: org.apache.commons.text.translate.CsvTranslatorsTest
+    method_name: testCsvEscaperCommaTest
+  - class_name: org.apache.commons.text.translate.CsvTranslatorsTest
+    method_name: testCsvUnEscaperPlaneTextTest
+  - class_name: org.apache.commons.text.translate.CsvTranslatorsTest
+    method_name: testCsvUnEscaperTest1
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+expected_baseline_failure: test_failure
+agent_budgets:
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+allowed_file_policy:
+  production_java_only: true

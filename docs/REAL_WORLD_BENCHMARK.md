@@ -1,71 +1,89 @@
 # RepoSuture Real-World Maven Benchmark
 
-The `maven-real-world-v1` suite contains exactly three unmodified upstream production bugs
-from two Apache projects. Complete third-party repositories are fetched into
-`benchmarks/real_world/.cache/`, which is ignored by Git. Only provenance metadata, public
-Case files, test-overlay hashes, and hidden validation Patches are redistributed.
+Release 0.4 adds the locked `maven-real-world-v2` suite: exactly eight upstream
+Java/Maven bugs from seven Apache Commons repositories. V1 remains unchanged and is a
+three-Case historical subset. Complete third-party repositories, generated fixtures, and
+build output live under the ignored `benchmarks/real_world/.cache/` directory.
 
-## Selection record
+## Locked cases
 
-Research date: **2026-07-22**.
+Research was performed on **2026-07-24** and stopped after five valid additions were
+locked. Every commit identifier below is a full immutable Git SHA.
 
-| Case | Project | Public bug/fix record | Buggy commit | Fix commit | Category |
-|---|---|---|---|---|---|
-| `commons-lang-mid-overflow` | Apache Commons Lang | [PR #1699](https://github.com/apache/commons-lang/pull/1699) | `e6b8bbd39505694012d869fa2107ef068b88d800` | `2240c1f93e5f96b12a83ec8615c29dfac46258e9` | integer-overflow boundary across two production APIs |
-| `commons-collections-int-value` | Apache Commons Collections | [PR #704](https://github.com/apache/commons-collections/pull/704) | `b219ccbe7b95250abd3ba3143edf340b7fad1943` | `6171ecbb1dc89f3e2d3bae659b6364995fbc6027` | numeric data conversion |
-| `commons-collections-flat3map-entry` | Apache Commons Collections | [PR #714](https://github.com/apache/commons-collections/pull/714) | `68a3c306d81dffe5bad59443dba3a7f5513178f4` | `14375bdba38421c174d646c40b8b757cce52dd45` | collection-entry conditional semantics |
+| Case | Upstream project | Public record | Buggy commit | Fix commit | Category | V2 role |
+|---|---|---|---|---|---|---|
+| `commons-lang-mid-overflow` | Apache Commons Lang | [PR 1699](https://github.com/apache/commons-lang/pull/1699) | `e6b8bbd39505694012d869fa2107ef068b88d800` | `2240c1f93e5f96b12a83ec8615c29dfac46258e9` | boundary arithmetic | original |
+| `commons-collections-int-value` | Apache Commons Collections | [PR 704](https://github.com/apache/commons-collections/pull/704) | `b219ccbe7b95250abd3ba3143edf340b7fad1943` | `6171ecbb1dc89f3e2d3bae659b6364995fbc6027` | data conversion | original |
+| `commons-collections-flat3map-entry` | Apache Commons Collections | [PR 714](https://github.com/apache/commons-collections/pull/714) | `68a3c306d81dffe5bad59443dba3a7f5513178f4` | `14375bdba38421c174d646c40b8b757cce52dd45` | collection semantics | original, regression-sensitive |
+| `commons-codec-zero-big-integer` | Apache Commons Codec | [PR 441](https://github.com/apache/commons-codec/pull/441) | `b7d744302ecf8b5ae775f28b5889a8af0dd4e82c` | `9400525894adeb9a7edd5bd5ec4fe5eeb774d83b` | binary encoding | new, regression-sensitive |
+| `commons-text-csv-lone-quote` | Apache Commons Text | [PR 748](https://github.com/apache/commons-text/pull/748) | `1bba8e3b90a155afb4e26ac7a8a1483e33d85a57` | `e2eb7d1afddca1fac6f55a125bdf2cd007bda589` | CSV parsing | new |
+| `commons-io-bounded-reader-skip` | Apache Commons IO | [PR 860](https://github.com/apache/commons-io/pull/860) | `cfe19ad9dcc9d0c7308e2dc187b2f8b57de21af0` | `e806e6b5926993ec6348a78542b1e1377a765e88` | range accounting | new, cross-component, regression-sensitive |
+| `commons-csv-supplementary-delimiter` | Apache Commons CSV | [PR 613](https://github.com/apache/commons-csv/pull/613) | `ed8dbf25ad73856cfa10cba4f5e9855fdcae0d88` | `1d89cd5f0aa454ef3853dfc7528242399ef26b74` | Unicode byte tracking | new, cross-component |
+| `commons-beanutils-nondouble-number` | Apache Commons BeanUtils | [PR 422](https://github.com/apache/commons-beanutils/pull/422) | `a62b1d1cc1d67e8caf38133c7f81c91d08e5f476` | `068d12326d95d153b42b0f60d6dfb41a033fc27a` | numeric conversion | new, cross-component |
 
-Both projects use the Apache License 2.0. Full provenance, license URLs, paths, target
-selectors, immutable diff hashes, and retrieval date are locked in
-[`sources.yaml`](../benchmarks/real_world/sources.yaml) and
+All seven projects use Apache License 2.0. The suite contains seven distinct bug
+categories, no repository contributes more than two Cases, and four Cases require
+cross-file or multi-component reasoning. Full provenance, license URLs, target selectors,
+test-overlay hashes, relevant regression scope, and deterministic local commits are locked
+in [`sources.yaml`](../benchmarks/real_world/sources.yaml) and
 [`source-lock.json`](../benchmarks/real_world/source-lock.json).
 
-At least one Case deliberately requires coordinating two related production implementations:
-the Commons Lang target covers the String API, while the full regression suite also carries
-the upstream mutable-builder regression. The other two Cases are not null-check variants.
+## Candidate filtering
 
-## Inclusion criteria
+Twelve candidates were investigated, using repository/license/build/provenance metadata
+before cloning or building:
 
-Each selected bug has a public GitHub report/fix PR, complete buggy and fix SHAs, an
-OSI-compatible license, a Maven build, a deterministic JUnit regression, no service/database/
-Docker requirement, and a production-only upstream fix that fits the existing Java policy.
-The target and relevant regression suite have bounded timeouts. The current Windows host is
-unusually slow when compiling the complete Apache projects, so those environment-dependent
-durations are reported rather than hidden.
+- The five additions above were accepted after real Maven/JUnit baseline reproduction.
+- Commons Codec PR 436 was rejected because its broad Base32 self-decoding change
+  overlapped the selected encoding Case.
+- Commons Text PR 754 was rejected because it duplicated an already represented
+  repository and offered less category diversity.
+- Commons IO's `UnsynchronizedBufferedReader.readLine` candidate was rejected because the
+  regression overlay was unusually broad.
+- Commons CSV PR 628 was rejected as a trivial null-check with weak diversity value.
+- Gson issues/PRs 3006 and 3034 were rejected because their multi-module reactor did not
+  fit the current bounded single-root policy.
+- Commons Validator PR 419 was rejected because wrapper/merge provenance was less direct
+  than the locked BeanUtils conversion Case.
 
-The Apache Commons Lang regression emits 313 Surefire XML files for more than 40,000 JUnit
-executions. On the release-validation host those files total 14.968 MiB and the largest is
-5.935 MiB. RepoSuture therefore retains explicit evidence bounds of 16 MiB per report,
-64 MiB total, and 1,000 report files; these are evidence-ingestion limits, not test-result
-shortcuts.
+No more candidates were researched after the five additions met the V2 distribution and
+runtime requirements.
 
-Candidates rejected during research included:
+## Inclusion and regression scope
 
-- Gson issue/PR #3006: genuine duplicate-null-key behavior, but its multi-module reactor and
-  serialization build increased environment/setup risk for this three-Case release.
-- Commons Lang PR #1737: genuine boundary behavior, but it overlapped the chosen boundary
-  category and did not add the required two-production-file navigation path.
-- documentation-only, timing-sensitive, service-backed, Gradle, and fixes requiring build/CI
-  changes were rejected by construction.
+Every Case has an OSI-compatible license, public fix record, Maven/JUnit test, bounded
+timeout, production-only repair, and no database, network service, cloud account, Docker,
+interactive input, native dependency, or timing-based oracle. The original three Cases and
+BeanUtils use the complete single-module Maven `test` suite. Codec, Text, IO, and CSV use
+locked lists of three related, non-target JUnit tests because their historical full suites
+contain respectively Windows line-ending/hash assumptions, an external HTTP lookup,
+Windows symbolic-link privilege assumptions, and Windows line-ending resource assumptions.
+Every selected test must appear as executed in Surefire XML or the run is an infrastructure
+failure. This keeps the regression oracle real and meaningful without admitting external
+services or platform-specific failures. The exact selectors and Maven argument arrays are
+recorded in `sources.yaml`; the complete upstream repositories are not redistributed.
+
+The Commons Lang Case spans the String and builder APIs. The IO, CSV, and BeanUtils Cases
+exercise behavior shared across reader/parser/converter components. The Codec and IO
+additions, plus the existing Flat3Map Case, preserve regression-sensitive behavior where a
+target-only repair is insufficient evidence.
 
 ## Deterministic construction
 
 For each Case the bootstrap:
 
-1. verifies the exact 40-character buggy and fix Git objects;
-2. checks the upstream URL and Apache license content hash;
-3. starts from the buggy commit;
-4. applies only the upstream test diff;
-5. proves the resulting production paths are identical to the buggy commit;
-6. checks the committed hidden production Patch byte-for-byte against the upstream diff;
-7. adds RepoSuture's pinned Maven 3.9.9 `only-script` launcher as benchmark infrastructure
-   without altering the upstream `pom.xml`;
-8. creates a parentless local commit with fixed identity and timestamp; and
-9. verifies the upstream cache HEAD/status is unchanged.
+1. verifies exact 40-character buggy and fix Git objects;
+2. verifies the upstream URL, SPDX license metadata, and immutable hashes;
+3. starts from the buggy commit and applies only the upstream test change;
+4. proves production paths still match the buggy commit;
+5. checks the hidden production Patch byte-for-byte against the upstream fix;
+6. adds the pinned Maven 3.9.9 `only-script` launcher without changing `pom.xml`;
+7. creates a parentless benchmark commit with fixed identity and timestamp; and
+8. verifies the upstream cache HEAD and status are unchanged.
 
-The resulting repository and source clone remain ignored. The Agent-visible Case contains
-the local base commit and public behavior only. It contains no fix SHA, fix PR, golden Patch
-path, expected modified file, production diff, or solution note.
+The Agent-visible Case contains only public behavior, the benchmark-local base commit,
+target selector, budgets, policy, and non-solution provenance. It never contains the fix
+SHA, fix PR, hidden Patch path, expected modified file, production diff, or solution notes.
 
 ## Commands
 
@@ -73,29 +91,41 @@ path, expected modified file, production diff, or solution note.
 python benchmarks/real_world/bootstrap_real_world.py
 
 reposuture validate-benchmark `
-  benchmarks/real_world/suites/maven-real-world-v1.yaml `
-  --artifacts-dir .artifacts-r03-real-validation
+  benchmarks/real_world/suites/maven-real-world-v2.yaml `
+  --artifacts-dir .artifacts-r04-real-validation
+```
 
+The locked Release 0.4 repair plan uses three runs for the original Cases and one for each
+new Case:
+
+```powershell
 reposuture benchmark-matrix `
-  benchmarks/real_world/suites/maven-real-world-v1.yaml `
-  --artifacts-dir .artifacts-live-r03-real-world-matrix `
+  benchmarks/real_world/suites/maven-real-world-v2.yaml `
+  --artifacts-dir .artifacts-live-r04-real `
   --provider openai `
   --model z-ai/glm-5.2 `
-  --model openai/gpt-5-mini `
+  --model deepseek/deepseek-v4-pro `
   --runs-per-case 1 `
+  --case-runs commons-lang-mid-overflow=3 `
+  --case-runs commons-collections-int-value=3 `
+  --case-runs commons-collections-flat3map-entry=3 `
   --schedule interleaved
 ```
 
-`--write-lock` is a maintainer operation used only after manually reviewing a deliberate
-upstream provenance change. Normal users and CI run the locked command without it.
+The locked feedback-ablation subset contains Commons Lang mid overflow, Commons
+Collections int conversion, Codec zero BigInteger, IO bounded-reader skip, CSV
+supplementary delimiter, and BeanUtils non-Double conversion. It spans six Cases, six
+repositories, several categories, cross-component behavior, and regression-sensitive
+behavior. The exact machine-readable selection is
+`benchmarks/real_world/suites/maven-real-world-v2-feedback-ablation.yaml`.
 
-Default CI does not fetch these repositories. The manual `Real-world benchmark validation`
-workflow performs deterministic bootstrap/validation and makes no model API request.
+`--write-lock` is a maintainer-only operation after manual provenance review. Default CI
+does not fetch third-party repositories. The manual `Real-world benchmark validation`
+workflow performs deterministic bootstrap and validation without a model API request.
 
 ## Correctness and secrecy boundary
 
-The validation-only golden Patch is not an expected-text oracle. Alternative production
-repairs are accepted when the target and full regression suite pass and repository/artifact
-integrity holds. `sources.yaml`, `source-lock.json`, validation YAML, and hidden Patches are
-never serialized into the Agent prompt or tool results. Agent tools remain confined to
-production Java paths in the isolated local fixture worktree.
+Hidden production Patches validate Case integrity; they are not expected-text oracles.
+Alternative production repairs are accepted only when target and regression tests pass and
+repository/artifact integrity holds. Validation metadata and source locks are never
+serialized into the Agent prompt, trace, trajectory, or tool results.

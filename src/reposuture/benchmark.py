@@ -243,7 +243,7 @@ def _validation_record(case_id: str, report: RunReport) -> ValidationCaseRecord:
     if report.patched_target_test_result.outcome is not TestOutcome.PASS:
         checks.append("patched target test did not pass")
     if report.regression_result.outcome is not TestOutcome.PASS:
-        checks.append("full regression suite did not pass")
+        checks.append("configured regression suite did not pass")
     if not report.original_repository_unchanged:
         checks.append("original repository integrity check failed")
     if not cleanup:
@@ -459,9 +459,13 @@ def _run_record(
         run_number=run_number,
         run_id=report.run_id,
         execution_mode=mode,
+        agent_execution_mode=report.execution_mode,
         provider=report.provider or requested_provider,
         model=report.model or "unavailable",
         final_status=report.final_status,
+        terminal_status=report.terminal_status,
+        primary_failure=report.primary_failure,
+        observed_failures=report.observed_failures,
         failure_category=category,
         failure_reason=report.failure_reason,
         baseline_reproduced=baseline_reproduced,
@@ -492,6 +496,10 @@ def _run_record(
         total_tokens=report.input_token_usage + report.output_token_usage,
         model_request_count=report.model_request_count,
         api_error_count=report.api_error_count,
+        provider_accepted=report.provider_accepted,
+        provider_rejected=report.provider_rejected,
+        model_executed=report.model_executed,
+        model_tool_call_observed=report.model_tool_call_observed,
         wall_clock_duration_seconds=finite_nonnegative(report.total_duration),
         model_latency_seconds=finite_nonnegative(report.model_latency_seconds),
         test_execution_duration_seconds=finite_nonnegative(

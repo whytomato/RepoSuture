@@ -46,6 +46,50 @@ def test_target_command_is_structured_and_prefers_wrapper(tmp_path: Path) -> Non
     ]
 
 
+def test_scoped_regression_command_is_structured(tmp_path: Path) -> None:
+    tests = (
+        TargetTest(class_name="com.example.ExampleTest", method_name="acceptsValid"),
+        TargetTest(class_name="com.example.OtherTest", method_name="keepsBoundary"),
+    )
+
+    command = MavenRunner(ProcessRunner()).regression_command(tmp_path, tests)
+
+    assert command == [
+        "mvn",
+        "-q",
+        "-Dtest=com.example.ExampleTest#acceptsValid,com.example.OtherTest#keepsBoundary",
+        "test",
+    ]
+
+
+def test_scoped_regression_requires_every_selected_test_to_execute(
+    tmp_path: Path,
+) -> None:
+    reports = tmp_path / "target/surefire-reports"
+    reports.mkdir(parents=True)
+    (reports / "TEST-com.example.ExampleTest.xml").write_text(
+        """<testsuite tests="1" failures="0" errors="0" skipped="0">
+  <testcase name="acceptsValid" classname="com.example.ExampleTest"/>
+</testsuite>
+""",
+        encoding="utf-8",
+    )
+    tests = (
+        TargetTest(class_name="com.example.ExampleTest", method_name="acceptsValid"),
+        TargetTest(class_name="com.example.OtherTest", method_name="keepsBoundary"),
+    )
+
+    execution = MavenRunner(ProcessRunner()).interpret_regression_process(
+        process_result(tmp_path, exit_code=0),
+        tmp_path,
+        tests,
+    )
+
+    assert execution.outcome is TestOutcome.INFRASTRUCTURE_ERROR
+    assert execution.infrastructure_error is not None
+    assert "com.example.OtherTest#keepsBoundary" in execution.infrastructure_error
+
+
 def test_target_failure_requires_matching_surefire_failure(tmp_path: Path) -> None:
     reports = tmp_path / "target/surefire-reports"
     reports.mkdir(parents=True)

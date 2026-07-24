@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Mapping
 from typing import Annotated
 from urllib.parse import urlsplit
@@ -27,6 +28,37 @@ ModelName = Annotated[
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$",
     ),
 ]
+
+PRIMARY_MODEL_ENV = "REPOSUTURE_MODEL"
+LEGACY_MODEL_ENV = "PATCHPILOT_MODEL"
+PRIMARY_COMPARISON_MODEL_ENV = "REPOSUTURE_COMPARISON_MODEL"
+LEGACY_COMPARISON_MODEL_ENV = "PATCHPILOT_COMPARISON_MODEL"
+_DEPRECATION_WARNED: set[str] = set()
+
+
+def _deprecated_model_warning(name: str, replacement: str) -> None:
+    if name in _DEPRECATION_WARNED:
+        return
+    _DEPRECATION_WARNED.add(name)
+    print(f"{name} is deprecated; use {replacement}.", file=sys.stderr)
+
+
+def resolve_model_environment(
+    *,
+    comparison: bool = False,
+    environ: Mapping[str, str] | None = None,
+) -> str:
+    """Resolve the primary RepoSuture variable with one-process legacy fallback."""
+
+    source = os.environ if environ is None else environ
+    primary = PRIMARY_COMPARISON_MODEL_ENV if comparison else PRIMARY_MODEL_ENV
+    legacy = LEGACY_COMPARISON_MODEL_ENV if comparison else LEGACY_MODEL_ENV
+    if primary in source:
+        return source[primary]
+    if legacy in source:
+        _deprecated_model_warning(legacy, primary)
+        return source[legacy]
+    return ""
 
 
 class OpenAIModelConfig(BaseModel):
@@ -111,7 +143,11 @@ def load_openai_model_config(
 
     source = os.environ if environ is None else environ
     api_key = source.get("OPENAI_API_KEY", "")
-    model = model_override if model_override is not None else source.get("PATCHPILOT_MODEL", "")
+    model = (
+        model_override
+        if model_override is not None
+        else resolve_model_environment(environ=source)
+    )
     base_url = source.get("OPENAI_BASE_URL") or None
     return OpenAIModelConfig(
         api_key=SecretStr(api_key),

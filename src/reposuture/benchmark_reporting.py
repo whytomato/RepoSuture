@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import math
 import statistics
 import uuid
@@ -23,7 +24,14 @@ from pydantic import (
 )
 
 from reposuture.benchmark_spec import BenchmarkFingerprint
-from reposuture.reporting import FinalStatus, RunReport, TestOutcome
+from reposuture.reporting import (
+    AgentExecutionMode,
+    FinalStatus,
+    ObservedFailure,
+    PrimaryFailure,
+    RunReport,
+    TestOutcome,
+)
 
 Sha256 = Annotated[str, StringConstraints(pattern=r"^[0-9a-f]{64}$")]
 
@@ -49,6 +57,75 @@ class FailureCategory(StrEnum):
     RESOLVED = "RESOLVED"
 
 
+def _legacy_primary_failure(value: object) -> str | None:
+    """Best-effort compatibility projection for pre-0.4 aggregate records."""
+
+    if value in {None, FailureCategory.RESOLVED, FailureCategory.RESOLVED.value}:
+        return None
+    mapping = {
+        FailureCategory.INVALID_CASE.value: PrimaryFailure.INVALID_CASE.value,
+        FailureCategory.BASELINE_NOT_REPRODUCED.value: (
+            PrimaryFailure.BASELINE_NOT_REPRODUCED.value
+        ),
+        FailureCategory.MODEL_CONFIGURATION.value: PrimaryFailure.PROVIDER_REJECTED.value,
+        FailureCategory.MODEL_API.value: PrimaryFailure.PROVIDER_REJECTED.value,
+        FailureCategory.MODEL_STOPPED.value: (
+            PrimaryFailure.MODEL_STOPPED_WITHOUT_VERIFICATION.value
+        ),
+        FailureCategory.SEARCH_FAILURE.value: PrimaryFailure.TOOL_PROTOCOL_FAILURE.value,
+        FailureCategory.PATCH_REJECTED.value: PrimaryFailure.NO_PATCH_ACCEPTED.value,
+        FailureCategory.TARGET_TEST_FAILED.value: PrimaryFailure.TARGET_UNRESOLVED.value,
+        FailureCategory.REGRESSION_FAILED.value: (
+            PrimaryFailure.REGRESSION_UNRESOLVED.value
+        ),
+        FailureCategory.POLICY_REJECTED.value: PrimaryFailure.PATCH_POLICY_BLOCKED.value,
+        FailureCategory.BUDGET_EXHAUSTED.value: (
+            PrimaryFailure.BUDGET_EXHAUSTED_WITHOUT_PROGRESS.value
+        ),
+        FailureCategory.INFRASTRUCTURE.value: (
+            PrimaryFailure.INFRASTRUCTURE_FAILURE.value
+        ),
+    }
+    key = value.value if isinstance(value, FailureCategory) else str(value)
+    return mapping.get(key)
+
+
+class DescriptiveWilsonInterval(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    confidence: float = Field(default=0.95, ge=0.95, le=0.95)
+    lower: float = Field(ge=0, le=1)
+    upper: float = Field(ge=0, le=1)
+
+
+def wilson_interval(
+    successes: int,
+    attempts: int,
+) -> DescriptiveWilsonInterval | None:
+    """Return a descriptive 95% Wilson interval, or N/A for no observations."""
+
+    if successes < 0 or attempts < 0 or successes > attempts:
+        raise ValueError("Wilson inputs require 0 <= successes <= attempts")
+    if attempts == 0:
+        return None
+    z = 1.959963984540054
+    proportion = successes / attempts
+    denominator = 1 + z * z / attempts
+    center = (proportion + z * z / (2 * attempts)) / denominator
+    margin = (
+        z
+        * math.sqrt(
+            proportion * (1 - proportion) / attempts
+            + z * z / (4 * attempts * attempts)
+        )
+        / denominator
+    )
+    return DescriptiveWilsonInterval(
+        lower=max(0.0, center - margin),
+        upper=min(1.0, center + margin),
+    )
+
+
 class ReproducibilityMetadata(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -64,7 +141,7 @@ class ReproducibilityMetadata(BaseModel):
     )
     project_version: Annotated[
         str, StringConstraints(strict=True, min_length=1, max_length=100)
-    ] = "0.3.0"
+    ] = "0.4.0"
     operating_system: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=500)]
     python_version: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=100)]
     java_version: Annotated[str, StringConstraints(strict=True, min_length=1, max_length=500)]
@@ -99,10 +176,14 @@ class BenchmarkRunRecord(BaseModel):
     run_number: int = Field(ge=1)
     run_id: str
     execution_mode: BenchmarkExecutionMode
+    agent_execution_mode: AgentExecutionMode = AgentExecutionMode.FULL_AGENT
     provider: str
     model: str
     final_status: FinalStatus
-    failure_category: FailureCategory
+    terminal_status: FinalStatus
+    primary_failure: PrimaryFailure | None = None
+    observed_failures: list[ObservedFailure] = Field(default_factory=list)
+    failure_category: FailureCategory | None = Field(default=None, exclude=True)
     failure_reason: str | None
     baseline_reproduced: bool
     baseline_result: TestOutcome
@@ -126,6 +207,10 @@ class BenchmarkRunRecord(BaseModel):
     total_tokens: int = Field(ge=0)
     model_request_count: int = Field(ge=0)
     api_error_count: int = Field(ge=0)
+    provider_accepted: bool = False
+    provider_rejected: bool = False
+    model_executed: bool = False
+    model_tool_call_observed: bool = False
     wall_clock_duration_seconds: float = Field(ge=0)
     model_latency_seconds: float = Field(ge=0)
     test_execution_duration_seconds: float = Field(ge=0)
@@ -149,6 +234,35 @@ class BenchmarkRunRecord(BaseModel):
         if not isinstance(value, dict):
             return value
         updated = dict(value)
+        if "terminal_status" not in updated and "final_status" in updated:
+            updated["terminal_status"] = updated["final_status"]
+        if "final_status" not in updated and "terminal_status" in updated:
+            updated["final_status"] = updated["terminal_status"]
+        if (
+            "failure_category" in updated
+            and updated.get("terminal_status") != updated.get("final_status")
+        ):
+            updated["terminal_status"] = updated.get("final_status")
+        updated.setdefault("agent_execution_mode", AgentExecutionMode.FULL_AGENT.value)
+        legacy = updated.get("failure_category")
+        if "primary_failure" not in updated or (
+            updated.get("primary_failure") is None
+            and legacy not in {None, FailureCategory.RESOLVED, FailureCategory.RESOLVED.value}
+        ):
+            updated["primary_failure"] = _legacy_primary_failure(legacy)
+        updated.setdefault("observed_failures", [])
+        inferred_tool_call = int(updated.get("total_tool_calls", 0)) > 0
+        inferred_resolved = updated.get("final_status") == FinalStatus.RESOLVED.value
+        inferred_executed = inferred_tool_call or inferred_resolved
+        updated.setdefault("provider_accepted", inferred_executed)
+        updated.setdefault(
+            "provider_rejected",
+            int(updated.get("model_request_count", 0)) > 0
+            and int(updated.get("api_error_count", 0)) > 0
+            and not inferred_executed,
+        )
+        updated.setdefault("model_executed", inferred_executed)
+        updated.setdefault("model_tool_call_observed", inferred_tool_call)
         executed = updated.setdefault(
             "executed_tool_calls", updated.get("total_tool_calls", 0)
         )
@@ -158,6 +272,16 @@ class BenchmarkRunRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_counters(self) -> Self:
+        if self.terminal_status is not self.final_status:
+            raise ValueError("terminal and legacy final status must agree")
+        if self.model_tool_call_observed and not self.model_executed:
+            raise ValueError("model Tool Calls require model execution")
+        if self.model_executed and not self.provider_accepted:
+            raise ValueError("model execution requires Provider acceptance")
+        if self.provider_rejected and (
+            self.provider_accepted or self.model_executed
+        ):
+            raise ValueError("Provider rejection cannot contain model execution")
         if sum(self.tool_calls_by_name.values()) != self.total_tool_calls:
             raise ValueError("tool-call distribution does not equal total tool calls")
         if self.rejected_patch_attempts > self.patch_attempts:
@@ -170,10 +294,13 @@ class BenchmarkRunRecord(BaseModel):
             raise ValueError("generated tool calls must equal executed plus discarded")
         if self.total_tokens != self.input_tokens + self.output_tokens:
             raise ValueError("total_tokens must equal input_tokens plus output_tokens")
-        if (self.failure_category is FailureCategory.RESOLVED) != (
-            self.final_status is FinalStatus.RESOLVED
+        if self.failure_category is not None and (
+            (self.failure_category is FailureCategory.RESOLVED)
+            != (self.final_status is FinalStatus.RESOLVED)
         ):
             raise ValueError("RESOLVED category and deterministic final status disagree")
+        if self.final_status is FinalStatus.RESOLVED and self.primary_failure is not None:
+            raise ValueError("RESOLVED observations cannot have a primary failure")
         return self
 
 
@@ -201,7 +328,7 @@ class FailureAnalysis(BaseModel):
 class BenchmarkSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: int = 1
+    schema_version: int = 2
     suite_id: str
     benchmark_fingerprint: BenchmarkFingerprint
     execution_mode: BenchmarkExecutionMode
@@ -211,16 +338,34 @@ class BenchmarkSummary(BaseModel):
     requested_attempts: int = Field(ge=0)
     total_cases: int = Field(ge=0)
     total_attempts: int = Field(ge=0)
+    assigned_attempts: int = Field(default=0, ge=0)
+    provider_accepted_attempts: int = Field(default=0, ge=0)
+    model_executed_attempts: int = Field(default=0, ge=0)
+    model_tool_call_attempts: int = Field(default=0, ge=0)
+    provider_rejected_attempts: int = Field(default=0, ge=0)
+    infrastructure_failed_attempts: int = Field(default=0, ge=0)
     executable_attempts: int = Field(ge=0)
     resolved_attempts: int = Field(ge=0)
     unresolved_attempts: int = Field(ge=0)
     attempt_level_resolution_rate: float = Field(ge=0, le=1)
+    system_end_to_end_resolution_rate: float = Field(default=0.0, ge=0, le=1)
+    provider_acceptance_rate: float = Field(default=0.0, ge=0, le=1)
+    capability_resolution_rate: float | None = Field(default=None, ge=0, le=1)
+    system_descriptive_wilson_95: DescriptiveWilsonInterval | None = None
+    capability_descriptive_wilson_95: DescriptiveWilsonInterval | None = None
     cases_resolved_at_least_once: int = Field(ge=0)
     baseline_reproduction_count: int = Field(ge=0)
     baseline_reproduction_rate: float = Field(ge=0, le=1)
     target_test_pass_count: int = Field(ge=0)
     regression_pass_count: int = Field(ge=0)
     failure_counts_by_category: dict[FailureCategory, int]
+    terminal_status_distribution: dict[FinalStatus, int] = Field(default_factory=dict)
+    primary_failure_distribution: dict[PrimaryFailure, int] = Field(
+        default_factory=dict
+    )
+    observed_failure_occurrence_counts: dict[ObservedFailure, int] = Field(
+        default_factory=dict
+    )
     average_model_turns: float = Field(ge=0)
     median_model_turns: float = Field(ge=0)
     average_tool_calls: float = Field(ge=0)
@@ -252,6 +397,23 @@ class BenchmarkSummary(BaseModel):
             raise ValueError("failure-category counts do not total attempts")
         if any(run.execution_mode is not self.execution_mode for run in self.runs):
             raise ValueError("scripted and live results must never be mixed")
+        if self.schema_version >= 2:
+            if self.assigned_attempts != self.total_attempts:
+                raise ValueError("assigned attempts must equal serialized observations")
+            if self.resolved_attempts > self.model_executed_attempts:
+                raise ValueError("resolved attempts require model execution")
+            if self.model_tool_call_attempts > self.model_executed_attempts:
+                raise ValueError("model Tool Call attempts exceed model execution")
+            if self.provider_accepted_attempts > self.assigned_attempts:
+                raise ValueError("Provider acceptance exceeds assigned attempts")
+            if self.capability_resolution_rate is None:
+                if (
+                    self.model_executed_attempts != 0
+                    or self.capability_descriptive_wilson_95 is not None
+                ):
+                    raise ValueError("capability N/A requires zero model executions")
+            elif self.model_executed_attempts == 0:
+                raise ValueError("capability rate requires model execution")
         return self
 
 
@@ -299,6 +461,30 @@ class ValidationSummary(BaseModel):
 
 
 def classify_failure(report: RunReport, *, search_failure_observed: bool) -> FailureCategory:
+    if report.final_status is FinalStatus.RESOLVED:
+        return FailureCategory.RESOLVED
+    primary_mapping = {
+        PrimaryFailure.INVALID_CASE: FailureCategory.INVALID_CASE,
+        PrimaryFailure.BASELINE_NOT_REPRODUCED: FailureCategory.BASELINE_NOT_REPRODUCED,
+        PrimaryFailure.REPOSITORY_OR_ARTIFACT_INTEGRITY: (
+            FailureCategory.INFRASTRUCTURE
+        ),
+        PrimaryFailure.INFRASTRUCTURE_FAILURE: FailureCategory.INFRASTRUCTURE,
+        PrimaryFailure.PROVIDER_REJECTED: FailureCategory.MODEL_API,
+        PrimaryFailure.NO_PATCH_ACCEPTED: FailureCategory.PATCH_REJECTED,
+        PrimaryFailure.TARGET_UNRESOLVED: FailureCategory.TARGET_TEST_FAILED,
+        PrimaryFailure.REGRESSION_UNRESOLVED: FailureCategory.REGRESSION_FAILED,
+        PrimaryFailure.PATCH_POLICY_BLOCKED: FailureCategory.POLICY_REJECTED,
+        PrimaryFailure.TOOL_PROTOCOL_FAILURE: FailureCategory.MODEL_API,
+        PrimaryFailure.BUDGET_EXHAUSTED_WITHOUT_PROGRESS: (
+            FailureCategory.BUDGET_EXHAUSTED
+        ),
+        PrimaryFailure.MODEL_STOPPED_WITHOUT_VERIFICATION: (
+            FailureCategory.MODEL_STOPPED
+        ),
+    }
+    if report.primary_failure is not None:
+        return primary_mapping[report.primary_failure]
     mapping = {
         FinalStatus.INVALID_CASE: FailureCategory.INVALID_CASE,
         FinalStatus.BASELINE_NOT_REPRODUCED: FailureCategory.BASELINE_NOT_REPRODUCED,
@@ -311,15 +497,46 @@ def classify_failure(report: RunReport, *, search_failure_observed: bool) -> Fai
         FinalStatus.POLICY_REJECTED: FailureCategory.POLICY_REJECTED,
         FinalStatus.AGENT_BUDGET_EXHAUSTED: FailureCategory.BUDGET_EXHAUSTED,
         FinalStatus.INFRASTRUCTURE_ERROR: FailureCategory.INFRASTRUCTURE,
-        FinalStatus.RESOLVED: FailureCategory.RESOLVED,
     }
-    if search_failure_observed and report.final_status is not FinalStatus.RESOLVED:
+    if search_failure_observed:
         return FailureCategory.SEARCH_FAILURE
     if report.final_status is FinalStatus.UNRESOLVED:
         if report.regression_result.outcome in {TestOutcome.FAIL, TestOutcome.TIMEOUT}:
             return FailureCategory.REGRESSION_FAILED
         return FailureCategory.TARGET_TEST_FAILED
     return mapping[report.final_status]
+
+
+def _compatibility_failure_category(run: BenchmarkRunRecord) -> FailureCategory:
+    """Retain the pre-0.4 aggregate view without using it as causal authority."""
+
+    if run.failure_category is not None:
+        return run.failure_category
+    if run.terminal_status is FinalStatus.RESOLVED:
+        return FailureCategory.RESOLVED
+    primary_mapping = {
+        PrimaryFailure.INVALID_CASE: FailureCategory.INVALID_CASE,
+        PrimaryFailure.BASELINE_NOT_REPRODUCED: FailureCategory.BASELINE_NOT_REPRODUCED,
+        PrimaryFailure.REPOSITORY_OR_ARTIFACT_INTEGRITY: (
+            FailureCategory.INFRASTRUCTURE
+        ),
+        PrimaryFailure.INFRASTRUCTURE_FAILURE: FailureCategory.INFRASTRUCTURE,
+        PrimaryFailure.PROVIDER_REJECTED: FailureCategory.MODEL_API,
+        PrimaryFailure.NO_PATCH_ACCEPTED: FailureCategory.PATCH_REJECTED,
+        PrimaryFailure.TARGET_UNRESOLVED: FailureCategory.TARGET_TEST_FAILED,
+        PrimaryFailure.REGRESSION_UNRESOLVED: FailureCategory.REGRESSION_FAILED,
+        PrimaryFailure.PATCH_POLICY_BLOCKED: FailureCategory.POLICY_REJECTED,
+        PrimaryFailure.TOOL_PROTOCOL_FAILURE: FailureCategory.MODEL_API,
+        PrimaryFailure.BUDGET_EXHAUSTED_WITHOUT_PROGRESS: (
+            FailureCategory.BUDGET_EXHAUSTED
+        ),
+        PrimaryFailure.MODEL_STOPPED_WITHOUT_VERIFICATION: (
+            FailureCategory.MODEL_STOPPED
+        ),
+    }
+    if run.primary_failure is not None:
+        return primary_mapping[run.primary_failure]
+    return FailureCategory.MODEL_STOPPED
 
 
 def final_patch_line_counts(path: Path) -> tuple[int, int]:
@@ -355,6 +572,7 @@ def aggregate_benchmark_runs(
     model: str,
     runs_per_case: int,
     selected_case_ids: list[str],
+    case_run_counts: dict[str, int] | None = None,
     runs: list[BenchmarkRunRecord],
     reproducibility: ReproducibilityMetadata,
     artifacts: dict[str, str],
@@ -363,12 +581,19 @@ def aggregate_benchmark_runs(
         raise ValueError("scripted and live benchmark records must not be mixed")
     total_attempts = len(runs)
     resolved_attempts = sum(
-        run.failure_category is FailureCategory.RESOLVED for run in runs
+        run.terminal_status is FinalStatus.RESOLVED for run in runs
     )
     baseline_count = sum(run.baseline_reproduced for run in runs)
     failure_counts = {category: 0 for category in FailureCategory}
     for run in runs:
-        failure_counts[run.failure_category] += 1
+        failure_counts[_compatibility_failure_category(run)] += 1
+    terminal_counts = Counter(run.terminal_status for run in runs)
+    primary_counts = Counter(
+        run.primary_failure for run in runs if run.primary_failure is not None
+    )
+    observed_counts: Counter[ObservedFailure] = Counter()
+    for run in runs:
+        observed_counts.update(run.observed_failures)
     tool_usage: Counter[str] = Counter()
     for run in runs:
         tool_usage.update(run.tool_calls_by_name)
@@ -376,7 +601,7 @@ def aggregate_benchmark_runs(
     for case_id in selected_case_ids:
         attempts = [run for run in runs if run.case_id == case_id]
         successes = sum(
-            run.failure_category is FailureCategory.RESOLVED for run in attempts
+            run.terminal_status is FinalStatus.RESOLVED for run in attempts
         )
         per_case.append(
             PerCaseAggregate(
@@ -388,9 +613,9 @@ def aggregate_benchmark_runs(
             )
         )
     failure_counter = Counter(
-        run.failure_category.value
+        run.primary_failure.value
         for run in runs
-        if run.failure_category is not FailureCategory.RESOLVED
+        if run.primary_failure is not None
     )
     most_common = [
         f"{category}: {count}"
@@ -402,6 +627,18 @@ def aggregate_benchmark_runs(
     total_output = sum(run.output_tokens for run in runs)
     total_reasoning = sum(run.reasoning_tokens for run in runs)
     total_reported = total_input + total_output
+    provider_accepted = sum(run.provider_accepted for run in runs)
+    model_executed = sum(run.model_executed for run in runs)
+    model_tool_calls = sum(run.model_tool_call_observed for run in runs)
+    provider_rejected = sum(run.provider_rejected for run in runs)
+    infrastructure_failed = sum(
+        run.primary_failure
+        in {
+            PrimaryFailure.INFRASTRUCTURE_FAILURE,
+            PrimaryFailure.REPOSITORY_OR_ARTIFACT_INTEGRITY,
+        }
+        for run in runs
+    )
     return BenchmarkSummary(
         suite_id=suite_id,
         benchmark_fingerprint=fingerprint,
@@ -409,9 +646,19 @@ def aggregate_benchmark_runs(
         provider=provider,
         model=model,
         runs_per_case=runs_per_case,
-        requested_attempts=len(selected_case_ids) * runs_per_case,
+        requested_attempts=(
+            sum(case_run_counts.values())
+            if case_run_counts is not None
+            else len(selected_case_ids) * runs_per_case
+        ),
         total_cases=len(selected_case_ids),
         total_attempts=total_attempts,
+        assigned_attempts=total_attempts,
+        provider_accepted_attempts=provider_accepted,
+        model_executed_attempts=model_executed,
+        model_tool_call_attempts=model_tool_calls,
+        provider_rejected_attempts=provider_rejected,
+        infrastructure_failed_attempts=infrastructure_failed,
         executable_attempts=sum(
             run.baseline_result is not TestOutcome.NOT_RUN for run in runs
         ),
@@ -419,6 +666,21 @@ def aggregate_benchmark_runs(
         unresolved_attempts=total_attempts - resolved_attempts,
         attempt_level_resolution_rate=(
             resolved_attempts / total_attempts if total_attempts else 0.0
+        ),
+        system_end_to_end_resolution_rate=(
+            resolved_attempts / total_attempts if total_attempts else 0.0
+        ),
+        provider_acceptance_rate=(
+            provider_accepted / total_attempts if total_attempts else 0.0
+        ),
+        capability_resolution_rate=(
+            resolved_attempts / model_executed if model_executed else None
+        ),
+        system_descriptive_wilson_95=wilson_interval(
+            resolved_attempts, total_attempts
+        ),
+        capability_descriptive_wilson_95=wilson_interval(
+            resolved_attempts, model_executed
         ),
         cases_resolved_at_least_once=sum(item.resolved_at_least_once for item in per_case),
         baseline_reproduction_count=baseline_count,
@@ -432,6 +694,15 @@ def aggregate_benchmark_runs(
             run.regression_result is TestOutcome.PASS for run in runs
         ),
         failure_counts_by_category=failure_counts,
+        terminal_status_distribution={
+            status: terminal_counts.get(status, 0) for status in FinalStatus
+        },
+        primary_failure_distribution={
+            failure: primary_counts.get(failure, 0) for failure in PrimaryFailure
+        },
+        observed_failure_occurrence_counts={
+            failure: observed_counts.get(failure, 0) for failure in ObservedFailure
+        },
         average_model_turns=_average([run.total_model_turns for run in runs]),
         median_model_turns=_median([run.total_model_turns for run in runs]),
         average_tool_calls=_average([run.total_tool_calls for run in runs]),
@@ -483,10 +754,13 @@ BENCHMARK_CSV_FIELDS = (
     "run_number",
     "run_id",
     "execution_mode",
+    "agent_execution_mode",
     "provider",
     "model",
     "final_status",
-    "failure_category",
+    "terminal_status",
+    "primary_failure",
+    "observed_failures",
     "baseline_reproduced",
     "baseline_result",
     "target_test_result",
@@ -508,6 +782,10 @@ BENCHMARK_CSV_FIELDS = (
     "total_tokens",
     "model_request_count",
     "api_error_count",
+    "provider_accepted",
+    "provider_rejected",
+    "model_executed",
+    "model_tool_call_observed",
     "wall_clock_duration_seconds",
     "model_latency_seconds",
     "test_execution_duration_seconds",
@@ -520,6 +798,16 @@ BENCHMARK_CSV_FIELDS = (
     "trace_path",
     "original_repository_unchanged",
     "failure_reason",
+    "aggregate_assigned_attempts",
+    "aggregate_provider_accepted_attempts",
+    "aggregate_model_executed_attempts",
+    "aggregate_model_tool_call_attempts",
+    "aggregate_resolved_attempts",
+    "aggregate_system_end_to_end_resolution_rate",
+    "aggregate_provider_acceptance_rate",
+    "aggregate_capability_resolution_rate",
+    "aggregate_system_wilson_95",
+    "aggregate_capability_wilson_95",
 )
 
 VALIDATION_CSV_FIELDS = (
@@ -562,7 +850,62 @@ def _display_list(values: list[str]) -> str:
     return ", ".join(values) if values else "none"
 
 
+def aggregate_csv_metrics(
+    *,
+    assigned_attempts: int,
+    provider_accepted_attempts: int,
+    model_executed_attempts: int,
+    model_tool_call_attempts: int,
+    resolved_attempts: int,
+) -> dict[str, object]:
+    """Return consistent aggregate rate columns for JSON-adjacent CSV evidence."""
+
+    system_interval = wilson_interval(resolved_attempts, assigned_attempts)
+    capability_interval = wilson_interval(resolved_attempts, model_executed_attempts)
+
+    def interval_text(value: DescriptiveWilsonInterval | None) -> str:
+        return (
+            f"[{value.lower:.6f},{value.upper:.6f}]"
+            if value is not None
+            else "N/A"
+        )
+
+    return {
+        "aggregate_assigned_attempts": assigned_attempts,
+        "aggregate_provider_accepted_attempts": provider_accepted_attempts,
+        "aggregate_model_executed_attempts": model_executed_attempts,
+        "aggregate_model_tool_call_attempts": model_tool_call_attempts,
+        "aggregate_resolved_attempts": resolved_attempts,
+        "aggregate_system_end_to_end_resolution_rate": (
+            resolved_attempts / assigned_attempts if assigned_attempts else "N/A"
+        ),
+        "aggregate_provider_acceptance_rate": (
+            provider_accepted_attempts / assigned_attempts
+            if assigned_attempts
+            else "N/A"
+        ),
+        "aggregate_capability_resolution_rate": (
+            resolved_attempts / model_executed_attempts
+            if model_executed_attempts
+            else "N/A"
+        ),
+        "aggregate_system_wilson_95": interval_text(system_interval),
+        "aggregate_capability_wilson_95": interval_text(capability_interval),
+    }
+
+
 def benchmark_markdown(summary: BenchmarkSummary) -> str:
+    capability_rate = (
+        f"{summary.capability_resolution_rate:.3f}"
+        if summary.capability_resolution_rate is not None
+        else "N/A"
+    )
+    capability_interval = (
+        f"[{summary.capability_descriptive_wilson_95.lower:.3f}, "
+        f"{summary.capability_descriptive_wilson_95.upper:.3f}]"
+        if summary.capability_descriptive_wilson_95 is not None
+        else "N/A"
+    )
     lines = [
         f"# RepoSuture Benchmark Report: {summary.suite_id}",
         "",
@@ -571,14 +914,21 @@ def benchmark_markdown(summary: BenchmarkSummary) -> str:
         f"- Benchmark fingerprint: `{summary.benchmark_fingerprint.value}`",
         f"- Attempts: {summary.total_attempts} ({summary.resolved_attempts} resolved, "
         f"{summary.unresolved_attempts} unresolved)",
-        f"- Empirical attempt-level resolution rate: "
-        f"{summary.attempt_level_resolution_rate:.3f}",
+        f"- System end-to-end resolution: {summary.resolved_attempts}/"
+        f"{summary.assigned_attempts} "
+        f"({summary.system_end_to_end_resolution_rate:.3f})",
+        f"- Provider acceptance: {summary.provider_accepted_attempts}/"
+        f"{summary.assigned_attempts} ({summary.provider_acceptance_rate:.3f})",
+        f"- Model capability observation: {summary.resolved_attempts}/"
+        f"{summary.model_executed_attempts} ({capability_rate}); "
+        f"descriptive Wilson 95%: {capability_interval}",
         "",
-        "The empirical rate is a raw observed rate, not a statistically rigorous pass@k estimate.",
+        "Capability is N/A when no model response entered the Agent loop. Provider rejection "
+        "still counts as an end-to-end service failure. These empirical rates are not pass@k.",
         "",
         "## Runs",
         "",
-        "| Case | Status | Turns | Tools | Patches | Target | Regression | Failure |",
+        "| Case | Status | Turns | Tools | Patches | Target | Regression | Primary failure |",
         "|------|--------|------:|------:|--------:|--------|------------|---------|",
     ]
     for run in summary.runs:
@@ -586,7 +936,7 @@ def benchmark_markdown(summary: BenchmarkSummary) -> str:
             f"| {run.case_id} | {run.final_status.value} | {run.total_model_turns} | "
             f"{run.total_tool_calls} | {run.patch_attempts} | "
             f"{run.target_test_result.value} | {run.regression_result.value} | "
-            f"{run.failure_category.value} |"
+            f"{run.primary_failure.value if run.primary_failure else 'none'} |"
         )
     lines.extend(
         [
@@ -629,6 +979,30 @@ def benchmark_markdown(summary: BenchmarkSummary) -> str:
             "",
             "- Most common failure categories: "
             + _display_list(summary.failure_analysis.most_common_failure_categories),
+            "- Terminal-status distribution: "
+            + _display_list(
+                [
+                    f"{status.value}: {count}"
+                    for status, count in summary.terminal_status_distribution.items()
+                    if count
+                ]
+            ),
+            "- Primary-failure distribution: "
+            + _display_list(
+                [
+                    f"{failure.value}: {count}"
+                    for failure, count in summary.primary_failure_distribution.items()
+                    if count
+                ]
+            ),
+            "- Observed-failure occurrences (non-exclusive): "
+            + _display_list(
+                [
+                    f"{failure.value}: {count}"
+                    for failure, count in summary.observed_failure_occurrence_counts.items()
+                    if count
+                ]
+            ),
             "- Target-pass/regression-fail runs: "
             + _display_list(summary.failure_analysis.target_pass_regression_fail_runs),
             "- Policy-rejected runs: "
@@ -682,7 +1056,8 @@ def validation_markdown(summary: ValidationSummary) -> str:
         [
             "",
             "A case is valid only when the selected target genuinely fails at baseline, the "
-            "nonempty hidden Patch changes production code only, the target and full regression "
+            "nonempty hidden Patch changes production code only, the target and configured "
+            "regression "
             "suite pass, the source repository is unchanged, and the worktree is removed.",
             "",
         ]
@@ -695,7 +1070,25 @@ def write_benchmark_summary(summary: BenchmarkSummary, root: Path) -> None:
         root / "benchmark-summary.json",
         summary.model_dump_json(indent=2) + "\n",
     )
-    rows = [run.model_dump(mode="json") for run in summary.runs]
+    rows = []
+    for run in summary.runs:
+        row = run.model_dump(mode="json")
+        row["tool_calls_by_name"] = json.dumps(
+            row["tool_calls_by_name"], sort_keys=True, separators=(",", ":")
+        )
+        row["observed_failures"] = json.dumps(
+            row["observed_failures"], separators=(",", ":")
+        )
+        row.update(
+            aggregate_csv_metrics(
+                assigned_attempts=summary.assigned_attempts,
+                provider_accepted_attempts=summary.provider_accepted_attempts,
+                model_executed_attempts=summary.model_executed_attempts,
+                model_tool_call_attempts=summary.model_tool_call_attempts,
+                resolved_attempts=summary.resolved_attempts,
+            )
+        )
+        rows.append(row)
     _atomic_write(root / "benchmark-runs.csv", _csv_text(rows, BENCHMARK_CSV_FIELDS))
     _atomic_write(root / "benchmark-report.md", benchmark_markdown(summary))
 

@@ -71,6 +71,9 @@ class OpenAIResponsesClient:
         self._sleep = sleep
         self._model_request_count = 0
         self._api_error_count = 0
+        self._provider_accepted_count = 0
+        self._provider_rejected_count = 0
+        self._model_executed_count = 0
         if sdk_client is None:
             sdk_client = cast(
                 _SDKClient,
@@ -90,6 +93,24 @@ class OpenAIResponsesClient:
     @property
     def api_error_count(self) -> int:
         return self._api_error_count
+
+    @property
+    def provider_accepted_count(self) -> int:
+        """Responses returned by the Provider before local protocol normalization."""
+
+        return self._provider_accepted_count
+
+    @property
+    def provider_rejected_count(self) -> int:
+        """HTTP 4xx responses that rejected a request before model execution."""
+
+        return self._provider_rejected_count
+
+    @property
+    def model_executed_count(self) -> int:
+        """Usable model responses that entered the Agent execution path."""
+
+        return self._model_executed_count
 
     def chat(
         self,
@@ -114,6 +135,7 @@ class OpenAIResponsesClient:
 
         started = time.perf_counter()
         raw_response = self._create_with_retries(request)
+        self._provider_accepted_count += 1
         latency = max(0.0, time.perf_counter() - started)
         output_items = self._output_items(raw_response)
         retained_output, discarded_tool_calls = _retain_first_function_call(
@@ -159,8 +181,11 @@ class OpenAIResponsesClient:
             "continuation": normalized_continuation,
         }
         if tool_call is not None:
-            return AgentResponse(tool_call=tool_call, **common)
-        return AgentResponse(finish_requested=True, **common)
+            normalized = AgentResponse(tool_call=tool_call, **common)
+        else:
+            normalized = AgentResponse(finish_requested=True, **common)
+        self._model_executed_count += 1
+        return normalized
 
     def _create_with_retries(self, request: dict[str, Any]) -> object:
         maximum_attempts = self.config.max_retries + 1
@@ -170,6 +195,8 @@ class OpenAIResponsesClient:
                 return self._client.responses.create(**request)
             except Exception as exc:
                 self._api_error_count += 1
+                if _is_provider_rejection(exc):
+                    self._provider_rejected_count += 1
                 retryable, configuration = _classify_provider_error(exc)
                 message = self._safe_error_message(exc)
                 if configuration:
@@ -407,6 +434,12 @@ def _classify_provider_error(exc: Exception) -> tuple[bool, bool]:
     if isinstance(exc, openai.APIStatusError):
         return exc.status_code in {408, 409, 429} or exc.status_code >= 500, False
     return False, False
+
+
+def _is_provider_rejection(exc: Exception) -> bool:
+    """Return whether the Provider explicitly rejected this HTTP request."""
+
+    return isinstance(exc, openai.APIStatusError) and 400 <= exc.status_code < 500
 
 
 def _get_value(value: object, name: str) -> object:

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from pathlib import Path
 from typing import Annotated
 
 import typer
 
+from reposuture.ablation import prepare_ablation_plan, run_benchmark_ablation
 from reposuture.benchmark import (
     benchmark_exit_code,
     run_benchmark,
@@ -16,8 +16,9 @@ from reposuture.benchmark import (
 )
 from reposuture.benchmark_spec import BenchmarkSuiteError
 from reposuture.matrix import prepare_matrix_plan, run_benchmark_matrix
+from reposuture.models.config import resolve_model_environment
 from reposuture.repair import repair_case
-from reposuture.reporting import FinalStatus, RunReport
+from reposuture.reporting import AgentExecutionMode, FinalStatus, RunReport
 from reposuture.runner import verify_case
 from reposuture.trajectory import (
     LiveTrajectoryRenderer,
@@ -76,6 +77,26 @@ def _exit_code(status: FinalStatus) -> int:
     return EXIT_VERIFICATION_FAILED
 
 
+def _parse_case_run_overrides(values: list[str] | None) -> dict[str, int]:
+    overrides: dict[str, int] = {}
+    for raw in values or []:
+        case_id, separator, count_text = raw.partition("=")
+        if (
+            not separator
+            or not case_id
+            or case_id in overrides
+            or not count_text.isdecimal()
+        ):
+            raise ValueError(
+                "--case-runs must be a unique CASE_ID=COUNT value"
+            )
+        count = int(count_text)
+        if not 1 <= count <= 20:
+            raise ValueError("--case-runs COUNT must be between 1 and 20")
+        overrides[case_id] = count
+    return overrides
+
+
 @app.command("verify-case")
 def verify_case_command(
     case_file: Annotated[
@@ -132,7 +153,7 @@ def repair_command(
         str | None,
         typer.Option(
             "--model",
-            help="Model name for this run; overrides PATCHPILOT_MODEL.",
+            help="Model name for this run; overrides REPOSUTURE_MODEL.",
         ),
     ] = None,
     max_turns: Annotated[
@@ -172,6 +193,13 @@ def repair_command(
             help="Render deterministic plain text without terminal color.",
         ),
     ] = False,
+    execution_mode: Annotated[
+        AgentExecutionMode,
+        typer.Option(
+            "--execution-mode",
+            help="Agent behavior: full-agent or single-candidate-no-feedback.",
+        ),
+    ] = AgentExecutionMode.FULL_AGENT,
 ) -> None:
     """Repair a validated Agent Case through safe tools and deterministic tests."""
 
@@ -191,6 +219,7 @@ def repair_command(
             max_patch_attempts=max_patch_attempts,
             keep_worktree=keep_worktree,
             trace_observer=observer,
+            execution_mode=execution_mode,
         )
     except (OSError, ValueError, WorkspaceError) as exc:
         typer.echo(f"Infrastructure error before report creation: {exc}", err=True)
@@ -299,7 +328,7 @@ def benchmark_command(
     ] = "openai",
     model: Annotated[
         str | None,
-        typer.Option("--model", help="Live model override; otherwise PATCHPILOT_MODEL."),
+        typer.Option("--model", help="Live model override; otherwise REPOSUTURE_MODEL."),
     ] = None,
     runs_per_case: Annotated[
         int | None,
@@ -417,8 +446,7 @@ def benchmark_matrix_command(
             "--model",
             help=(
                 "Model identifier; repeat at least twice. When omitted, uses "
-                "PATCHPILOT_MODEL and PATCHPILOT_COMPARISON_MODEL (default "
-                "openai/gpt-5-mini)."
+                "REPOSUTURE_MODEL and REPOSUTURE_COMPARISON_MODEL."
             ),
         ),
     ] = None,
@@ -426,6 +454,16 @@ def benchmark_matrix_command(
         int,
         typer.Option("--runs-per-case", min=1, max=20, help="Attempts per Case/model."),
     ] = 3,
+    case_runs: Annotated[
+        list[str] | None,
+        typer.Option(
+            "--case-runs",
+            help=(
+                "Override attempts for one Case as CASE_ID=COUNT; repeat as needed. "
+                "Other selected Cases use --runs-per-case."
+            ),
+        ),
+    ] = None,
     case_ids: Annotated[
         list[str] | None,
         typer.Option("--case", help="Case id filter; repeat to select multiple Cases."),
@@ -482,19 +520,19 @@ def benchmark_matrix_command(
         raise typer.Exit(code=EXIT_INVALID_CASE)
     selected_models = list(models or [])
     if not selected_models:
-        primary = os.getenv("PATCHPILOT_MODEL")
-        comparison = os.getenv(
-            "PATCHPILOT_COMPARISON_MODEL", "openai/gpt-5-mini"
-        )
+        primary = resolve_model_environment()
+        comparison = resolve_model_environment(comparison=True)
         if primary:
-            selected_models = [primary, comparison]
+            selected_models = [primary, comparison] if comparison else [primary]
     try:
+        run_overrides = _parse_case_run_overrides(case_runs)
         if dry_run:
             _, selected, plan = prepare_matrix_plan(
                 suite_file,
                 provider=provider,
                 models=selected_models,
                 runs_per_case=runs_per_case,
+                case_run_counts=run_overrides,
                 case_ids=case_ids,
                 random_seed=random_seed,
                 max_turns=max_turns,
@@ -507,10 +545,29 @@ def benchmark_matrix_command(
             typer.echo(f"Suite: {plan.suite_id}")
             typer.echo("Models: " + ", ".join(plan.models))
             typer.echo("Cases: " + ", ".join(plan.selected_case_ids))
+            mode_label = (
+                "live " if plan.execution_mode.value == "live model" else ""
+            )
+            if len(set(plan.case_run_counts.values())) == 1:
+                uniform_runs = next(iter(plan.case_run_counts.values()))
+                typer.echo(
+                    f"Plan: {len(selected)} Cases x {uniform_runs} runs x "
+                    f"{len(plan.models)} models = {plan.total_attempts} "
+                    f"{mode_label}attempts"
+                )
+            else:
+                typer.echo(
+                    f"Plan: {len(selected)} Cases, "
+                    f"{sum(plan.case_run_counts.values())} Case-runs x "
+                    f"{len(plan.models)} models = {plan.total_attempts} "
+                    f"{mode_label}attempts"
+                )
             typer.echo(
-                f"Plan: {len(selected)} Cases x {runs_per_case} runs x "
-                f"{len(plan.models)} models = {plan.total_attempts} "
-                f"{'live ' if plan.execution_mode.value == 'live model' else ''}attempts"
+                "Case runs: "
+                + ", ".join(
+                    f"{case_id}={count}"
+                    for case_id, count in plan.case_run_counts.items()
+                )
             )
             typer.echo("Schedule: interleaved, sequential")
             typer.echo("Expected artifact layout: models/<model-id>/runs/<run-id>")
@@ -526,6 +583,7 @@ def benchmark_matrix_command(
             provider=provider,
             models=selected_models,
             runs_per_case=runs_per_case,
+            case_run_counts=run_overrides,
             case_ids=case_ids,
             resume=resume,
             continue_on_failure=continue_on_failure,
@@ -554,6 +612,159 @@ def benchmark_matrix_command(
     if resolved:
         return
     if not any(run.baseline_reproduced for run in summary.runs):
+        raise typer.Exit(code=EXIT_INFRASTRUCTURE)
+    raise typer.Exit(code=EXIT_VERIFICATION_FAILED)
+
+
+@app.command("benchmark-ablation")
+def benchmark_ablation_command(
+    suite_file: Annotated[
+        Path,
+        typer.Argument(help="Path to a versioned RepoSuture benchmark suite YAML file."),
+    ],
+    artifacts_dir: Annotated[
+        Path,
+        typer.Option("--artifacts-dir", help="Directory for ablation evidence."),
+    ] = Path(".artifacts-ablation"),
+    provider: Annotated[
+        str,
+        typer.Option("--provider", help="Provider: openai (live) or scripted (offline)."),
+    ] = "openai",
+    model: Annotated[
+        str | None,
+        typer.Option(
+            "--model",
+            help="One model identifier; otherwise REPOSUTURE_COMPARISON_MODEL.",
+        ),
+    ] = None,
+    modes: Annotated[
+        list[AgentExecutionMode] | None,
+        typer.Option(
+            "--mode",
+            help=(
+                "Execution mode; include full-agent and "
+                "single-candidate-no-feedback."
+            ),
+        ),
+    ] = None,
+    case_ids: Annotated[
+        list[str] | None,
+        typer.Option("--case", help="Case id filter; repeat for the locked subset."),
+    ] = None,
+    schedule: Annotated[
+        str,
+        typer.Option("--schedule", help="Deterministic scheduling policy."),
+    ] = "interleaved",
+    dry_run: Annotated[
+        bool,
+        typer.Option("--dry-run", help="Print the plan without artifacts or requests."),
+    ] = False,
+    resume: Annotated[
+        bool,
+        typer.Option("--resume", help="Reuse only integrity-checked live attempts."),
+    ] = False,
+    max_turns: Annotated[
+        int | None,
+        typer.Option("--max-turns", min=1, max=50),
+    ] = None,
+    max_tool_calls: Annotated[
+        int | None,
+        typer.Option("--max-tool-calls", min=1, max=200),
+    ] = None,
+    max_patch_attempts: Annotated[
+        int | None,
+        typer.Option("--max-patch-attempts", min=1, max=10),
+    ] = None,
+    max_target_test_executions: Annotated[
+        int | None,
+        typer.Option("--max-target-test-executions", min=1, max=25),
+    ] = None,
+    max_regression_executions: Annotated[
+        int | None,
+        typer.Option("--max-regression-executions", min=1, max=10),
+    ] = None,
+    max_wall_clock_seconds: Annotated[
+        int | None,
+        typer.Option("--max-wall-clock-seconds", min=1, max=86_400),
+    ] = None,
+) -> None:
+    """Compare feedback/replanning with one candidate and no feedback."""
+
+    if schedule != "interleaved":
+        typer.echo("Invalid ablation schedule: only 'interleaved' is supported", err=True)
+        raise typer.Exit(code=EXIT_INVALID_CASE)
+    selected_model = model or resolve_model_environment(comparison=True)
+    selected_modes = list(
+        modes
+        or [
+            AgentExecutionMode.FULL_AGENT,
+            AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK,
+        ]
+    )
+    try:
+        if dry_run:
+            _, selected, plan = prepare_ablation_plan(
+                suite_file,
+                provider=provider,
+                model=selected_model,
+                execution_modes=selected_modes,
+                case_ids=case_ids,
+                max_turns=max_turns,
+                max_tool_calls=max_tool_calls,
+                max_patch_attempts=max_patch_attempts,
+                max_target_test_executions=max_target_test_executions,
+                max_regression_executions=max_regression_executions,
+                max_wall_clock_seconds=max_wall_clock_seconds,
+            )
+            typer.echo(f"Suite: {plan.suite_id}")
+            typer.echo(f"Model: {plan.model}")
+            typer.echo("Cases: " + ", ".join(plan.selected_case_ids))
+            typer.echo("Modes: " + ", ".join(mode.value for mode in plan.execution_modes))
+            typer.echo(
+                f"Plan: {len(selected)} Cases x {len(plan.execution_modes)} modes = "
+                f"{plan.total_attempts} "
+                f"{'live ' if plan.benchmark_execution_mode.value == 'live model' else ''}"
+                "attempts"
+            )
+            typer.echo("Schedule: interleaved, sequential")
+            for item in plan.items:
+                typer.echo(
+                    f"  {item.sequence:03d} {item.case_id} "
+                    f"{item.execution_mode.value} -> {item.artifact_directory}"
+                )
+            return
+        summary = run_benchmark_ablation(
+            suite_file,
+            artifacts_dir,
+            provider=provider,
+            model=selected_model,
+            execution_modes=selected_modes,
+            case_ids=case_ids,
+            resume=resume,
+            max_turns=max_turns,
+            max_tool_calls=max_tool_calls,
+            max_patch_attempts=max_patch_attempts,
+            max_target_test_executions=max_target_test_executions,
+            max_regression_executions=max_regression_executions,
+            max_wall_clock_seconds=max_wall_clock_seconds,
+            progress=typer.echo,
+            cli_arguments=sys.argv[1:],
+        )
+    except BenchmarkSuiteError as exc:
+        typer.echo(f"Invalid benchmark ablation: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INVALID_CASE) from exc
+    except (OSError, ValueError) as exc:
+        typer.echo(f"Benchmark ablation infrastructure error: {exc}", err=True)
+        raise typer.Exit(code=EXIT_INFRASTRUCTURE) from exc
+
+    resolved = sum(
+        run.terminal_status is FinalStatus.RESOLVED for run in summary.runs
+    )
+    typer.echo(f"Resolved attempts: {resolved}/{summary.total_attempts}")
+    typer.echo(f"Ablation report: {summary.artifacts['ablation_report_markdown']}")
+    if resolved:
+        return
+    if not summary.runs or not any(run.baseline_reproduced for run in summary.runs):
         raise typer.Exit(code=EXIT_INFRASTRUCTURE)
     raise typer.Exit(code=EXIT_VERIFICATION_FAILED)
 

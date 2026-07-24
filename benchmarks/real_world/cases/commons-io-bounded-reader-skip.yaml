@@ -1,0 +1,37 @@
+schema_version: 2
+workflow: agent_repair
+id: commons-io-bounded-reader-skip
+repository: ../.cache/fixtures/commons-io-bounded-reader-skip
+base_commit: ace86c17f2f6402a681537a0c41d6e143ae356d9
+issue_title: Bounded reader skip accounting exceeds actual progress
+issue_description: >-
+  A bounded reader records the requested skip amount rather than the amount its
+  delegate actually skipped. Requests beyond the configured bound or beyond the
+  delegate's progress must preserve the bound and the next readable character.
+target_test:
+  class_name: org.apache.commons.io.input.BoundedReaderTest
+  method_name: testSkipUsesActualSkippedCount
+regression_tests:
+  - class_name: org.apache.commons.io.input.BoundedReaderTest
+    method_name: testMarkReset
+  - class_name: org.apache.commons.io.input.BoundedReaderTest
+    method_name: testSkipDoesNotExceedBound
+  - class_name: org.apache.commons.io.input.BoundedReaderTest
+    method_name: testSkipDoesNotOverflowCharsRead
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+expected_baseline_failure: test_failure
+agent_budgets:
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+allowed_file_policy:
+  production_java_only: true

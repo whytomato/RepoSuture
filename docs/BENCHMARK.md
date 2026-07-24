@@ -34,7 +34,7 @@ The versioned suite is `benchmarks/suites/mvp.yaml`.
 Every Case has a selected target JUnit method and at least one unrelated regression
 test. The trap's scripted sequence first applies a naive candidate that passes the
 target but fails another test, then submits a complete baseline-relative candidate that
-passes the full suite.
+passes the configured suite.
 
 Cases are intentionally small and offline after Maven dependencies are available. They
 use no database, network service, timing behavior, generated source, or obscure build
@@ -92,9 +92,13 @@ reposuture validate-benchmark benchmarks/suites/mvp.yaml `
 
 For each Case, the validator performs schema and commit validation, creates a detached
 worktree, runs the selected baseline target, proves from Surefire XML that the target
-executed and failed, applies a nonempty hidden Patch, reruns the target, runs the full
-Maven regression suite, verifies that only production code changed, fingerprints the
-source repository before and after, removes the worktree, and verifies cleanup.
+executed and failed, applies a nonempty hidden Patch, reruns the target, runs the
+configured Maven regression suite, verifies that only production code changed,
+fingerprints the source repository before and after, removes the worktree, and verifies
+cleanup. The default is the full Maven suite. A real-world Case may instead lock a bounded
+list of unrelated JUnit selectors when the upstream full suite requires an external
+service or unsupported platform capability; every selected test must be observed in
+Surefire XML.
 
 A Case is valid only if all checks pass. A compile error, missing/zero/skipped target,
 timeout, dependency failure, empty Patch, test/build/Wrapper/CI change, target failure,
@@ -117,7 +121,7 @@ consume paid API quota:
 
 ```powershell
 $env:OPENAI_API_KEY = "<your-api-key>"
-$env:PATCHPILOT_MODEL = "<your-model-name>"
+$env:REPOSUTURE_MODEL = "<your-model-name>"
 
 reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-live `
@@ -161,20 +165,25 @@ directory for a new run so prior evidence remains reproducible.
 ## Cross-model benchmark matrix
 
 `benchmark-matrix` schedules the existing `repair_case` implementation; it does not contain
-a second Agent loop. At least two explicit model identifiers are required. For Release 0.3:
+a second Agent loop. At least two explicit model identifiers are required. Release 0.4 can
+assign additional stability repetitions only to selected Cases:
 
 ```powershell
-reposuture benchmark-matrix benchmarks/suites/mvp.yaml `
-  --artifacts-dir .artifacts-matrix-r3 `
+reposuture benchmark-matrix benchmarks/real_world/suites/maven-real-world-v2.yaml `
+  --artifacts-dir .artifacts-live-r04-real `
   --provider openai `
   --model z-ai/glm-5.2 `
-  --model openai/gpt-5-mini `
-  --runs-per-case 3 `
+  --model deepseek/deepseek-v4-pro `
+  --runs-per-case 1 `
+  --case-runs commons-lang-mid-overflow=3 `
+  --case-runs commons-collections-int-value=3 `
+  --case-runs commons-collections-flat3map-entry=3 `
   --schedule interleaved --dry-run
 ```
 
-The dry run performs no model request and creates no artifact. It reports the complete
-deterministic schedule and exactly `6 Cases x 3 runs x 2 models = 36 live attempts`.
+The dry run performs no model request and creates no artifact. For this plan it reports
+exactly 28 attempts: 18 repeated original-Case observations plus 10 one-run new-Case
+observations.
 Execution is sequential and alternates model order across Cases/runs. Both models receive
 the same source commit, fingerprint, public issue, prompt, tool schemas, budgets, timeouts,
 endpoint, policy, and verifier. Every item has its own conversation, worktree, deterministic
@@ -184,8 +193,9 @@ The root contains `matrix-plan.json`, `matrix-summary.json`, `matrix-runs.csv`, 
 `matrix-report.md`. Each model directory also contains the ordinary three benchmark aggregate
 files, so model records are never mixed. Reports include generated/executed/discarded tool
 calls, discard rate, normalization/recount use, tokens, latency, tests, Patch size, failure
-taxonomy, per-Case success counts, and a descriptive 95% Wilson interval. The interval is not
-pass@k and three attempts per Case do not establish statistical significance.
+taxonomy, per-Case success counts, and descriptive 95% Wilson intervals. The intervals are
+not pass@k; three attempts per original Case and one attempt per new Case do not establish
+statistical significance.
 
 `--resume` accepts only complete live observations from the identical plan. The project
 commit, clean flag, suite/fingerprint, Case/run/model/provider, budgets, deterministic run id,
@@ -194,20 +204,23 @@ A complete failed run is retained as an empirical observation. Dirty, scripted, 
 tampered, different-commit, different-model, or different-fingerprint data is rejected;
 aggregate summaries are never trusted as resume authority.
 
-When no `--model` is supplied, the compatibility variables `PATCHPILOT_MODEL` and
-`PATCHPILOT_COMPARISON_MODEL` are used; comparison defaults to `openai/gpt-5-mini`. Exact
-model ids are always written to the plan and reports.
+When no `--model` is supplied, RepoSuture reads `REPOSUTURE_MODEL` and
+`REPOSUTURE_COMPARISON_MODEL`. Deprecated `PATCHPILOT_MODEL` and
+`PATCHPILOT_COMPARISON_MODEL` remain fallbacks and emit one process-wide stderr warning
+when used. The new variables always win when both names are present. Exact model ids are
+written to the plan and reports.
 
 ## Real-world suite
 
-`benchmarks/real_world/suites/maven-real-world-v1.yaml` is separate from the six synthetic
-MVP Cases. It has exactly three fixed upstream Apache bugs across Commons Lang and Commons
-Collections, no scripted solutions, and the same deterministic validation, fingerprint,
-single-model benchmark, and matrix interfaces. Bootstrap and validate it explicitly:
+`benchmarks/real_world/suites/maven-real-world-v2.yaml` is separate from the six synthetic
+MVP Cases. It has exactly eight fixed upstream Apache bugs across seven repositories, no
+scripted solutions, and the same deterministic validation, fingerprint, single-model
+benchmark, and matrix interfaces. V1 remains an immutable three-Case historical subset.
+Bootstrap and validate V2 explicitly:
 
 ```powershell
 python benchmarks/real_world/bootstrap_real_world.py
-reposuture validate-benchmark benchmarks/real_world/suites/maven-real-world-v1.yaml `
+reposuture validate-benchmark benchmarks/real_world/suites/maven-real-world-v2.yaml `
   --artifacts-dir .artifacts-real-validation
 ```
 
@@ -249,8 +262,8 @@ Scripted and live attempts remain separate in aggregate reports.
 
 ## OpenRouter smoke and model Patch ingestion
 
-The live adapter reads only `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and
-`PATCHPILOT_MODEL`. An OpenRouter run uses `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
+The live adapter reads `OPENAI_API_KEY`, optional `OPENAI_BASE_URL`, and
+`REPOSUTURE_MODEL`. An OpenRouter run uses `OPENAI_BASE_URL=https://openrouter.ai/api/v1`
 and the existing CLI selector `--provider openai`; reports distinguish the actual
 provider as `openrouter`. Scripted and deterministic commands inject their own model or
 use no model and never initialize this live client.
@@ -325,23 +338,30 @@ local and ignored.
 ## Correctness oracle and metrics
 
 `RESOLVED` requires observed baseline target failure, an accepted nonempty production
-Java Patch, observed target PASS, observed full-regression PASS, unchanged original
+Java Patch, observed target PASS, observed configured-regression PASS, unchanged original
 repository, persisted evidence, and verified worktree cleanup. Final model text cannot
 set or bypass this state.
 
-Each run records suite/fingerprint/Case/run/provider/model/mode; final status and failure
-reason; baseline, target, and regression evidence; model turns and request count; total
+Each run records suite/fingerprint/Case/run/provider/model/mode; `terminal_status`,
+`primary_failure`, and ordered deduplicated `observed_failures`; baseline, target, and
+regression evidence; Provider/model lifecycle counters; model turns and requests; total
 and per-tool calls; Patch and rejected-Patch attempts; target and regression executions;
 input/output/reasoning tokens when supplied; API errors; wall-clock, model, and test
 duration; modified files; inserted/deleted lines; Patch size/path; integrity; and
 deterministic failure flags.
 
-Aggregates include total Cases/attempts, resolved and unresolved attempts, raw
-attempt-level resolution rate, Cases resolved at least once, baseline reproduction
-rate, target/regression PASS counts, failures by category, average and median turns,
-tools, Patches, and duration, total/average reported token use, average Patch size, tool
-usage distribution, and per-Case successes/attempts/empirical rate. The empirical rate
-is descriptive and is not labelled `pass@k`; no pass@k estimator is implemented.
+Aggregates keep these denominators distinct:
+
+- `system_end_to_end_resolution_rate = resolved_attempts / assigned_attempts`;
+- `provider_acceptance_rate = provider_accepted_attempts / assigned_attempts`;
+- `capability_resolution_rate = resolved_attempts / model_executed_attempts`.
+
+`model_tool_call_attempts` additionally counts attempts with at least one valid
+model-requested action. When no model response entered Agent execution, capability rate
+and its Wilson interval are JSON `null`, CSV empty/N/A, and Markdown `N/A`; they are never
+displayed as 0%. Provider rejection still counts against end-to-end availability.
+System-level and capability-level Wilson intervals are calculated separately only for
+positive denominators. These descriptive rates are not pass@k.
 
 No monetary cost is calculated from hardcoded model pricing. Token counts are evidence,
 not a price. Any future cost estimate must use an explicit user-provided pricing
@@ -349,27 +369,45 @@ configuration and be labelled an estimate.
 
 ## Failure taxonomy and interpretation
 
-Every run is assigned exactly one aggregate category:
+New reports separate three concepts:
 
-- `INVALID_CASE` — linked Case/schema evidence is invalid.
-- `BASELINE_NOT_REPRODUCED` — the target did not genuinely fail as specified.
-- `MODEL_CONFIGURATION` — provider credentials/model configuration were unavailable or invalid.
-- `MODEL_API` — a live provider request failed after the bounded policy.
-- `MODEL_STOPPED` — the model stopped before deterministic resolution.
-- `SEARCH_FAILURE` — bounded trace evidence shows repository search could not execute.
-- `PATCH_REJECTED` — a candidate was syntactically or mechanically rejected.
-- `TARGET_TEST_FAILED` — accepted candidates did not make the target pass.
-- `REGRESSION_FAILED` — the target passed but a full regression did not.
-- `POLICY_REJECTED` — a candidate violated allowed-file or Patch policy.
-- `BUDGET_EXHAUSTED` — a configured Agent/test/wall-clock budget ended the run.
-- `INFRASTRUCTURE` — Git, filesystem, Maven/JVM, cleanup, or artifact infrastructure failed.
-- `RESOLVED` — the complete deterministic oracle passed.
+- `terminal_status` is how execution ended and preserves CLI exit-code compatibility;
+- `primary_failure` is one centralized, evidence-aware causal classification;
+- `observed_failures` is an ordered, deduplicated list of every relevant failure event.
 
-The Markdown report separately lists target-pass/regression-fail, policy rejection,
-budget exhaustion, model stop without verification, and infrastructure evidence. This
-analysis is a deterministic aggregation of reports/traces; no LLM writes it. Inspect
-the linked per-run report and bounded logs before deciding whether a failure reflects
-model behavior, policy, budget, test infrastructure, or invalid benchmark data.
+Integrity and infrastructure outrank Provider rejection; pre-execution Provider rejection
+outranks model behavior; accepted candidates establish target/regression evidence that
+cannot be overwritten by a later search error or budget terminal. For example, target
+PASS, regression FAIL, rollback, later search failure, and budget exhaustion ends with
+`terminal_status=AGENT_BUDGET_EXHAUSTED`,
+`primary_failure=REGRESSION_UNRESOLVED`, while all four observations remain visible.
+Legacy `failure_category` records still load, but new reports serialize the three fields.
+Aggregates publish separate terminal, primary, and non-mutually-exclusive observed
+distributions. No LLM writes this analysis.
+
+## Feedback-loop ablation
+
+`single-candidate-no-feedback` is a controlled baseline, not another Agent architecture.
+It reuses the same provider, public Case, exploration tools, `ToolExecutor`, Patch policy,
+worktree, target/regression tests, reports, and correctness oracle. The model may explore
+and submit at most one Patch. Rejection ends the attempt; an accepted Patch is verified,
+but post-Patch test evidence is not returned to the model, no REPLAN is allowed, and no
+second Patch can be submitted.
+
+```powershell
+reposuture benchmark-ablation `
+  benchmarks/real_world/suites/maven-real-world-v2-feedback-ablation.yaml `
+  --artifacts-dir .artifacts-live-r04-ablation `
+  --provider openai `
+  --model deepseek/deepseek-v4-pro `
+  --mode full-agent `
+  --mode single-candidate-no-feedback `
+  --schedule interleaved --dry-run
+```
+
+The Release 0.4 locked subset is documented in
+[`REAL_WORLD_BENCHMARK.md`](REAL_WORLD_BENCHMARK.md). Resume identity includes execution
+mode, so a full-Agent observation can never satisfy a no-feedback schedule item.
 
 ## Exit codes
 

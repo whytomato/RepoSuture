@@ -28,7 +28,7 @@ from reposuture.reporting import FinalStatus, TestOutcome
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SUITE = PROJECT_ROOT / "benchmarks" / "suites" / "mvp.yaml"
-MODELS = ("z-ai/glm-5.2", "openai/gpt-5-mini")
+MODELS = ("z-ai/glm-5.2", "deepseek/deepseek-v4-pro")
 
 
 def _plan() -> MatrixPlan:
@@ -108,6 +108,33 @@ def test_cli_dry_run_reports_exact_mvp_formula_without_artifacts(tmp_path: Path)
     assert "6 Cases x 3 runs x 2 models = 36 live attempts" in result.stdout
     assert "Schedule: interleaved, sequential" in result.stdout
     assert not artifacts.exists()
+
+
+def test_heterogeneous_case_run_plan_can_lock_exactly_28_attempts() -> None:
+    suite = load_benchmark_suite(SUITE)
+    repeated = {
+        case.reference.id: 3 for case in suite.cases[:4]
+    }
+    plan = build_matrix_plan(
+        suite,
+        selected_cases=suite.cases,
+        models=MODELS,
+        runs_per_case=1,
+        case_run_counts=repeated,
+        provider="openai",
+        budget_values=suite.manifest.default_agent_budgets.model_dump(),
+        project_git_commit="a" * 40,
+        project_worktree_dirty=False,
+        random_seed=None,
+    )
+
+    assert plan.total_attempts == 28
+    assert plan.case_run_counts == {
+        **repeated,
+        suite.cases[4].reference.id: 1,
+        suite.cases[5].reference.id: 1,
+    }
+    assert len({item.run_id for item in plan.items}) == 28
 
 
 def test_resume_rejects_scripted_mode_before_any_run(tmp_path: Path) -> None:

@@ -1,0 +1,23 @@
+schema_version: 1
+id: commons-codec-zero-big-integer
+repository: ../.cache/fixtures/commons-codec-zero-big-integer
+base_commit: fd6e8c53f73976e1ba89edb982b20de2d2bc90c1
+issue_title: Zero BigInteger conversion loses its byte representation
+issue_description: >-
+  Converting a zero BigInteger to the byte form used by Base64 returns an empty
+  representation. Zero must retain a single zero byte, while signed, byte-boundary,
+  and large integer behavior must remain compatible.
+target_test:
+  class_name: org.apache.commons.codec.binary.Base64ToIntegerBytesTest
+  method_name: testBigIntegerWithAllZeros
+regression_tests:
+  - class_name: org.apache.commons.codec.binary.Base64ToIntegerBytesTest
+    method_name: testBigIntegerWithBoundaryValues
+  - class_name: org.apache.commons.codec.binary.Base64ToIntegerBytesTest
+    method_name: testBigIntegerWithMixedSigns
+  - class_name: org.apache.commons.codec.binary.Base64ToIntegerBytesTest
+    method_name: testBigIntegerWithVeryLargeNumber
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+golden_patch: patches/commons-codec-zero-big-integer.patch
+expected_baseline_failure: test_failure

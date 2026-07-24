@@ -1,0 +1,48 @@
+schema_version: 1
+suite_id: maven-real-world-v2-feedback-ablation
+description: >-
+  Locked six-Case subset for the Release 0.4 full-Agent versus
+  single-candidate-no-feedback engineering ablation.
+default_runs_per_case: 1
+default_agent_budgets:
+  max_model_turns: 18
+  max_tool_calls: 45
+  max_patch_attempts: 4
+  max_target_test_executions: 10
+  max_regression_executions: 4
+  max_wall_clock_seconds: 3600
+  api_timeout_seconds: 60
+  api_max_retries: 2
+  max_output_tokens: 4096
+  max_retained_model_output_bytes: 65536
+  max_retained_tool_output_bytes: 65536
+tags: [java, maven, real-world, feedback-ablation, locked, v2]
+notes: >-
+  This subset was locked before live execution. It spans six repositories,
+  boundary, conversion, encoding, range, and Unicode behavior; it includes
+  cross-component and regression-sensitive Cases.
+cases:
+  - id: commons-lang-mid-overflow
+    agent_case: ../cases/commons-lang-mid-overflow.yaml
+    validation_case: ../validation/commons-lang-mid-overflow.yaml
+    tags: [apache-commons-lang, boundary-arithmetic, cross-file, original-v1]
+  - id: commons-collections-int-value
+    agent_case: ../cases/commons-collections-int-value.yaml
+    validation_case: ../validation/commons-collections-int-value.yaml
+    tags: [apache-commons-collections, data-conversion, original-v1]
+  - id: commons-codec-zero-big-integer
+    agent_case: ../cases/commons-codec-zero-big-integer.yaml
+    validation_case: ../validation/commons-codec-zero-big-integer.yaml
+    tags: [apache-commons-codec, binary-encoding, regression-sensitive, new-v2]
+  - id: commons-io-bounded-reader-skip
+    agent_case: ../cases/commons-io-bounded-reader-skip.yaml
+    validation_case: ../validation/commons-io-bounded-reader-skip.yaml
+    tags: [apache-commons-io, range-accounting, cross-component, regression-sensitive, new-v2]
+  - id: commons-csv-supplementary-delimiter
+    agent_case: ../cases/commons-csv-supplementary-delimiter.yaml
+    validation_case: ../validation/commons-csv-supplementary-delimiter.yaml
+    tags: [apache-commons-csv, unicode-byte-tracking, cross-component, new-v2]
+  - id: commons-beanutils-nondouble-number
+    agent_case: ../cases/commons-beanutils-nondouble-number.yaml
+    validation_case: ../validation/commons-beanutils-nondouble-number.yaml
+    tags: [apache-commons-beanutils, numeric-conversion, cross-component, new-v2]

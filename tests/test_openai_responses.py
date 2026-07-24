@@ -25,7 +25,12 @@ from reposuture.agent.tools import (
     create_reposuture_tool_executor,
 )
 from reposuture.case_spec import TargetTest
-from reposuture.models.config import OpenAIModelConfig, load_openai_model_config
+from reposuture.models import config as model_config
+from reposuture.models.config import (
+    OpenAIModelConfig,
+    load_openai_model_config,
+    resolve_model_environment,
+)
 from reposuture.models.openai_responses import (
     ModelAPIError,
     ModelConfigurationError,
@@ -115,12 +120,58 @@ def test_environment_loader_accepts_plaintext_api_key() -> None:
     config = load_openai_model_config(
         environ={
             "OPENAI_API_KEY": "openrouter-test-key",
-            "PATCHPILOT_MODEL": "openai/o4-mini",
+            "REPOSUTURE_MODEL": "openai/o4-mini",
         }
     )
 
     assert config.api_key.get_secret_value() == "openrouter-test-key"
     assert config.model == "openai/o4-mini"
+
+
+def test_reposuture_model_takes_precedence_without_warning(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_config._DEPRECATION_WARNED.clear()
+
+    config = load_openai_model_config(
+        environ={
+            "OPENAI_API_KEY": "openrouter-test-key",
+            "REPOSUTURE_MODEL": "z-ai/glm-5.2",
+            "PATCHPILOT_MODEL": "deprecated/model",
+        }
+    )
+
+    assert config.model == "z-ai/glm-5.2"
+    assert capsys.readouterr().err == ""
+
+
+def test_deprecated_model_fallback_warns_once_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_config._DEPRECATION_WARNED.clear()
+    environment = {
+        "OPENAI_API_KEY": "openrouter-test-key",
+        "PATCHPILOT_MODEL": "z-ai/glm-5.2",
+        "PATCHPILOT_COMPARISON_MODEL": "deepseek/deepseek-v4-pro",
+    }
+
+    first = load_openai_model_config(environ=environment)
+    second = load_openai_model_config(environ=environment)
+    comparison = resolve_model_environment(comparison=True, environ=environment)
+    repeated_comparison = resolve_model_environment(
+        comparison=True, environ=environment
+    )
+
+    assert first.model == second.model == "z-ai/glm-5.2"
+    assert comparison == repeated_comparison == "deepseek/deepseek-v4-pro"
+    stderr = capsys.readouterr().err
+    assert stderr.count(
+        "PATCHPILOT_MODEL is deprecated; use REPOSUTURE_MODEL."
+    ) == 1
+    assert stderr.count(
+        "PATCHPILOT_COMPARISON_MODEL is deprecated; "
+        "use REPOSUTURE_COMPARISON_MODEL."
+    ) == 1
 
 
 def test_environment_loader_distinguishes_explicit_openrouter_endpoint() -> None:
@@ -414,6 +465,9 @@ def test_missing_call_id_is_a_protocol_error() -> None:
     client = OpenAIResponsesClient(config=_config(), sdk_client=_FakeSDK([missing_id]))
     with pytest.raises(ModelProtocolError):
         client.chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
+    assert client.provider_accepted_count == 1
+    assert client.provider_rejected_count == 0
+    assert client.model_executed_count == 0
 
 
 def test_multiple_function_calls_are_sequentialized_before_continuation() -> None:
@@ -525,6 +579,9 @@ def test_authentication_error_is_not_retried_and_secret_is_redacted() -> None:
         client.chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
 
     assert len(sdk.responses.calls) == 1
+    assert client.provider_accepted_count == 0
+    assert client.provider_rejected_count == 1
+    assert client.model_executed_count == 0
     assert "sk-test-secret-value" not in str(caught.value)
     assert "<redacted>" in str(caught.value)
 
@@ -533,11 +590,17 @@ def test_timeout_and_rate_limit_receive_only_bounded_retries() -> None:
     request = httpx.Request("POST", "https://api.openai.com/v1/responses")
     timeout = openai.APITimeoutError(request=request)
     recovered_sdk = _FakeSDK([timeout, _function_response()])
-    recovered = OpenAIResponsesClient(
+    recovered_client = OpenAIResponsesClient(
         config=_config(retries=2), sdk_client=recovered_sdk, sleep=lambda _seconds: None
-    ).chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
+    )
+    recovered = recovered_client.chat(
+        [AgentMessage(role="user", content="Inspect.")], [_tool_spec()]
+    )
     assert recovered.tool_call is not None
     assert len(recovered_sdk.responses.calls) == 2
+    assert recovered_client.provider_accepted_count == 1
+    assert recovered_client.provider_rejected_count == 0
+    assert recovered_client.model_executed_count == 1
 
     limited = _http_error(openai.RateLimitError, 429, "rate limited")
     exhausted_sdk = _FakeSDK([limited, limited, limited, limited])
@@ -549,6 +612,9 @@ def test_timeout_and_rate_limit_receive_only_bounded_retries() -> None:
     assert caught.value.retryable is True
     assert caught.value.attempts == 3
     assert len(exhausted_sdk.responses.calls) == 3
+    assert client.provider_accepted_count == 0
+    assert client.provider_rejected_count == 3
+    assert client.model_executed_count == 0
 
 
 def test_invalid_request_is_not_retried() -> None:
@@ -564,6 +630,24 @@ def test_invalid_request_is_not_retried() -> None:
     assert caught.value.retryable is False
     assert caught.value.attempts == 1
     assert len(sdk.responses.calls) == 1
+    assert client.provider_rejected_count == 1
+
+
+def test_provider_403_is_rejected_before_model_execution() -> None:
+    error = _http_error(openai.PermissionDeniedError, 403, "provider policy")
+    client = OpenAIResponsesClient(
+        config=_config(retries=2),
+        sdk_client=_FakeSDK([error]),
+        sleep=lambda _seconds: None,
+    )
+
+    with pytest.raises(ModelAPIError):
+        client.chat([AgentMessage(role="user", content="Inspect.")], [_tool_spec()])
+
+    assert client.model_request_count == 1
+    assert client.provider_rejected_count == 1
+    assert client.provider_accepted_count == 0
+    assert client.model_executed_count == 0
 
 
 def test_all_six_reposuture_tools_have_closed_strict_object_schemas(

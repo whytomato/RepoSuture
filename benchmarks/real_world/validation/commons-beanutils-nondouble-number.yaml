@@ -1,0 +1,16 @@
+schema_version: 1
+id: commons-beanutils-nondouble-number
+repository: ../.cache/fixtures/commons-beanutils-nondouble-number
+base_commit: faaad2e01e7e0a2b9dc2f6f1bbbd8510e34c7a04
+issue_title: Locale double conversion rejects other Number implementations
+issue_description: >-
+  Locale-aware conversion to Double throws a class-cast error when parsing a
+  valid Integer or Float value. Numeric inputs supported by the converter hierarchy
+  must produce a Double while retaining null and existing Double behavior.
+target_test:
+  class_name: org.apache.commons.beanutils2.converters.DoubleLocaleConverterTest
+  method_name: testConvertFromNonDoubleNumber
+target_test_timeout_seconds: 1200
+regression_timeout_seconds: 2400
+golden_patch: patches/commons-beanutils-nondouble-number.patch
+expected_baseline_failure: test_failure

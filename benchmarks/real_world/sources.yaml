@@ -1,5 +1,5 @@
 schema_version: 1
-retrieval_date: 2026-07-22
+retrieval_date: 2026-07-24
 cases:
   - case_id: commons-lang-mid-overflow
     source_slug: commons-lang
@@ -14,6 +14,11 @@ cases:
     fix_commit: 2240c1f93e5f96b12a83ec8615c29dfac46258e9
     build_system: maven
     module_path: .
+    bug_category: boundary-arithmetic
+    cross_file_or_component: true
+    regression_sensitive: false
+    regression_scope: full-project-maven-test
+    regression_command: [./mvnw, test]
     target_test_selector: org.apache.commons.lang3.StringUtilsSubstringTest#testMid_String
     production_paths:
       - src/main/java/org/apache/commons/lang3/StringUtils.java
@@ -39,6 +44,11 @@ cases:
     fix_commit: 6171ecbb1dc89f3e2d3bae659b6364995fbc6027
     build_system: maven
     module_path: .
+    bug_category: data-conversion
+    cross_file_or_component: false
+    regression_sensitive: false
+    regression_scope: full-project-maven-test
+    regression_command: [./mvnw, test]
     target_test_selector: org.apache.commons.collections4.MapUtilsTest#testGetIntValue
     production_paths:
       - src/main/java/org/apache/commons/collections4/MapUtils.java
@@ -62,6 +72,11 @@ cases:
     fix_commit: 14375bdba38421c174d646c40b8b757cce52dd45
     build_system: maven
     module_path: .
+    bug_category: collection-semantics
+    cross_file_or_component: false
+    regression_sensitive: true
+    regression_scope: full-project-maven-test
+    regression_command: [./mvnw, test]
     target_test_selector: org.apache.commons.collections4.map.Flat3MapTest#testEntrySetRemoveChecksValue
     production_paths:
       - src/main/java/org/apache/commons/collections4/map/Flat3Map.java
@@ -71,3 +86,176 @@ cases:
     test_overlay_sha256: 18a23c294e73117dedf20f8cefb1380840203fda73a249798cbd638eb8139e17
     license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
     deterministic_timestamp: 2000-03-03T00:00:00+00:00
+
+  - case_id: commons-codec-zero-big-integer
+    source_slug: commons-codec
+    upstream_project: Apache Commons Codec
+    repository_url: https://github.com/apache/commons-codec.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-codec/blob/b7d744302ecf8b5ae775f28b5889a8af0dd4e82c/LICENSE.txt
+    issue_url: https://github.com/apache/commons-codec/pull/441
+    fix_pr_url: https://github.com/apache/commons-codec/pull/441
+    buggy_commit: b7d744302ecf8b5ae775f28b5889a8af0dd4e82c
+    fix_commit: 9400525894adeb9a7edd5bd5ec4fe5eeb774d83b
+    build_system: maven
+    module_path: .
+    bug_category: binary-encoding
+    cross_file_or_component: false
+    regression_sensitive: true
+    regression_scope: selected-junit-tests
+    regression_test_selectors:
+      - org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithBoundaryValues
+      - org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithMixedSigns
+      - org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithVeryLargeNumber
+    regression_command:
+      - ./mvnw
+      - -q
+      - -Dtest=org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithBoundaryValues,org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithMixedSigns,org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithVeryLargeNumber
+      - test
+    target_test_selector: org.apache.commons.codec.binary.Base64ToIntegerBytesTest#testBigIntegerWithAllZeros
+    production_paths:
+      - src/main/java/org/apache/commons/codec/binary/Base64.java
+    test_paths:
+      - src/test/java/org/apache/commons/codec/binary/Base64ToIntegerBytesTest.java
+    production_patch_sha256: c59345c123df9ec1e01330e12fb78530052a608cb1dd3c0e9992145b21f572b7
+    test_overlay_sha256: c17595143654a7010811653dcd485402be4b5c9133806095364fc481fd50c091
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-04-01T00:00:00+00:00
+
+  - case_id: commons-text-csv-lone-quote
+    source_slug: commons-text
+    upstream_project: Apache Commons Text
+    repository_url: https://github.com/apache/commons-text.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-text/blob/1bba8e3b90a155afb4e26ac7a8a1483e33d85a57/LICENSE.txt
+    issue_url: https://github.com/apache/commons-text/pull/748
+    fix_pr_url: https://github.com/apache/commons-text/pull/748
+    buggy_commit: 1bba8e3b90a155afb4e26ac7a8a1483e33d85a57
+    fix_commit: e2eb7d1afddca1fac6f55a125bdf2cd007bda589
+    build_system: maven
+    module_path: .
+    bug_category: csv-parsing
+    cross_file_or_component: false
+    regression_sensitive: false
+    regression_scope: selected-junit-tests
+    regression_test_selectors:
+      - org.apache.commons.text.translate.CsvTranslatorsTest#testCsvEscaperCommaTest
+      - org.apache.commons.text.translate.CsvTranslatorsTest#testCsvUnEscaperPlaneTextTest
+      - org.apache.commons.text.translate.CsvTranslatorsTest#testCsvUnEscaperTest1
+    regression_command:
+      - ./mvnw
+      - -q
+      - -Dtest=org.apache.commons.text.translate.CsvTranslatorsTest#testCsvEscaperCommaTest,org.apache.commons.text.translate.CsvTranslatorsTest#testCsvUnEscaperPlaneTextTest,org.apache.commons.text.translate.CsvTranslatorsTest#testCsvUnEscaperTest1
+      - test
+    target_test_selector: org.apache.commons.text.translate.CsvTranslatorsTest#testCsvUnEscaperSingleQuoteTest
+    production_paths:
+      - src/main/java/org/apache/commons/text/translate/CsvTranslators.java
+    test_paths:
+      - src/test/java/org/apache/commons/text/translate/CsvTranslatorsTest.java
+    production_patch_sha256: f4db7c6a7a5afecf22d230983536a44ab809711d7ad3be6a8555e2d2c7f7eb6b
+    test_overlay_sha256: edd9d45beab1625a991ada58964ce9c8010d551d7fc03ec8df1f2832d2e27d0c
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-04-02T00:00:00+00:00
+
+  - case_id: commons-io-bounded-reader-skip
+    source_slug: commons-io
+    upstream_project: Apache Commons IO
+    repository_url: https://github.com/apache/commons-io.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-io/blob/cfe19ad9dcc9d0c7308e2dc187b2f8b57de21af0/LICENSE.txt
+    issue_url: https://github.com/apache/commons-io/pull/860
+    fix_pr_url: https://github.com/apache/commons-io/pull/860
+    buggy_commit: cfe19ad9dcc9d0c7308e2dc187b2f8b57de21af0
+    fix_commit: e806e6b5926993ec6348a78542b1e1377a765e88
+    build_system: maven
+    module_path: .
+    bug_category: range-accounting
+    cross_file_or_component: true
+    regression_sensitive: true
+    regression_scope: selected-junit-tests
+    regression_test_selectors:
+      - org.apache.commons.io.input.BoundedReaderTest#testMarkReset
+      - org.apache.commons.io.input.BoundedReaderTest#testSkipDoesNotExceedBound
+      - org.apache.commons.io.input.BoundedReaderTest#testSkipDoesNotOverflowCharsRead
+    regression_command:
+      - ./mvnw
+      - -q
+      - -Dtest=org.apache.commons.io.input.BoundedReaderTest#testMarkReset,org.apache.commons.io.input.BoundedReaderTest#testSkipDoesNotExceedBound,org.apache.commons.io.input.BoundedReaderTest#testSkipDoesNotOverflowCharsRead
+      - test
+    target_test_selector: org.apache.commons.io.input.BoundedReaderTest#testSkipUsesActualSkippedCount
+    production_paths:
+      - src/main/java/org/apache/commons/io/input/BoundedReader.java
+    test_paths:
+      - src/test/java/org/apache/commons/io/input/BoundedReaderTest.java
+    production_patch_sha256: 194c85febe57378cd718cc58002a652d16f6666af0f6cda7162fcb95d15b26b0
+    test_overlay_sha256: e9026a9ae54e0502a7ea0e19728803df8cb4d33acc7be610e4a06254ddda28e7
+    license_sha256: c1d1a38c99c48ccad170890ade6066e2e240bb6ce59861d4eb7f672eddd2a4c6
+    deterministic_timestamp: 2000-04-03T00:00:00+00:00
+
+  - case_id: commons-csv-supplementary-delimiter
+    source_slug: commons-csv
+    upstream_project: Apache Commons CSV
+    repository_url: https://github.com/apache/commons-csv.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-csv/blob/ed8dbf25ad73856cfa10cba4f5e9855fdcae0d88/LICENSE.txt
+    issue_url: https://github.com/apache/commons-csv/pull/613
+    fix_pr_url: https://github.com/apache/commons-csv/pull/613
+    buggy_commit: ed8dbf25ad73856cfa10cba4f5e9855fdcae0d88
+    fix_commit: 1d89cd5f0aa454ef3853dfc7528242399ef26b74
+    build_system: maven
+    module_path: .
+    bug_category: unicode-byte-tracking
+    cross_file_or_component: true
+    regression_sensitive: false
+    regression_scope: selected-junit-tests
+    regression_test_selectors:
+      - org.apache.commons.csv.ExtendedBufferedReaderTest#testReadChar
+      - org.apache.commons.csv.ExtendedBufferedReaderTest#testReadingSupplementaryCharacterTracksBytes
+      - org.apache.commons.csv.ExtendedBufferedReaderTest#testReadLookahead1
+    regression_command:
+      - ./mvnw
+      - -q
+      - -Dtest=org.apache.commons.csv.ExtendedBufferedReaderTest#testReadChar,org.apache.commons.csv.ExtendedBufferedReaderTest#testReadingSupplementaryCharacterTracksBytes,org.apache.commons.csv.ExtendedBufferedReaderTest#testReadLookahead1
+      - test
+    target_test_selector: org.apache.commons.csv.CSVParserTest#testGetBytePositionMultiCharacterDelimiterWithSupplementaryCharacter
+    production_paths:
+      - src/main/java/org/apache/commons/csv/ExtendedBufferedReader.java
+    test_paths:
+      - src/test/java/org/apache/commons/csv/CSVParserTest.java
+      - src/test/java/org/apache/commons/csv/ExtendedBufferedReaderTest.java
+    production_patch_sha256: 53b3e39b18e54427057d902d0b73216df46850046cec231104e27a6d05bd10eb
+    test_overlay_sha256: 5c28be06c101dfa276d6830e1011c72e127da31960887dabca58308b2cf83569
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-04-04T00:00:00+00:00
+
+  - case_id: commons-beanutils-nondouble-number
+    source_slug: commons-beanutils
+    upstream_project: Apache Commons BeanUtils
+    repository_url: https://github.com/apache/commons-beanutils.git
+    license_identifier: Apache-2.0
+    license_file: LICENSE.txt
+    license_source_url: https://github.com/apache/commons-beanutils/blob/a62b1d1cc1d67e8caf38133c7f81c91d08e5f476/LICENSE.txt
+    issue_url: https://github.com/apache/commons-beanutils/pull/422
+    fix_pr_url: https://github.com/apache/commons-beanutils/pull/422
+    buggy_commit: a62b1d1cc1d67e8caf38133c7f81c91d08e5f476
+    fix_commit: 068d12326d95d153b42b0f60d6dfb41a033fc27a
+    build_system: maven
+    module_path: .
+    bug_category: numeric-conversion
+    cross_file_or_component: true
+    regression_sensitive: false
+    regression_scope: full-project-maven-test
+    regression_command: [./mvnw, test]
+    target_test_selector: org.apache.commons.beanutils2.converters.DoubleLocaleConverterTest#testConvertFromNonDoubleNumber
+    production_paths:
+      - src/main/java/org/apache/commons/beanutils2/locale/converters/DoubleLocaleConverter.java
+    test_paths:
+      - src/test/java/org/apache/commons/beanutils2/converters/DoubleLocaleConverterTest.java
+    production_patch_sha256: 6c2e2d9892829d08860bf9a715572860f005fbee2c9e8673faffec4763e28b8e
+    test_overlay_sha256: a528e9bead6233c301c56dcb45fca63dfb13b3a4afb8803948d075c435382a83
+    license_sha256: b1d2870f1a00e4d7f56576e5f0870cba109e041f8af66866cf5b499478e654e7
+    deterministic_timestamp: 2000-04-05T00:00:00+00:00

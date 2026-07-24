@@ -33,14 +33,22 @@ Catalog availability did not guarantee request permission. Every GPT-5 Mini requ
 rejected by the upstream provider with HTTP 403 for provider Terms of Service before the
 model produced a tool call. The report therefore preserves those attempts as
 `MODEL_API_ERROR`; it does not reinterpret them as model repair failures or replace them.
+Release 0.4's corrected denominator semantics classify them as 18 assigned,
+18 Provider-rejected, and zero model-executed attempts. GPT capability and its capability
+Wilson interval are therefore **N/A**, not 0%.
 
 ## Aggregate comparison
 
 | Metric | `z-ai/glm-5.2` | `openai/gpt-5-mini` |
 |---|---:|---:|
+| Assigned attempts | 18 | 18 |
+| Provider accepted / rejected | 18 / 0 | 0 / 18 |
+| Model executed / model tool-call attempts | 18 / 18 | 0 / 0 |
 | Resolved attempts | 18/18 | 0/18 |
-| Empirical attempt rate | 1.000 | 0.000 |
-| Descriptive 95% Wilson interval | [0.824, 1.000] | [0.000, 0.176] |
+| System end-to-end rate | 1.000 | 0.000 |
+| System descriptive 95% Wilson interval | [0.824, 1.000] | [0.000, 0.176] |
+| Capability rate | 1.000 | N/A |
+| Capability descriptive 95% Wilson interval | [0.824, 1.000] | N/A |
 | Cases resolved at least once | 6/6 | 0/6 |
 | Cases resolved in all three attempts | 6/6 | 0/6 |
 | Baseline failures reproduced | 18/18 | 18/18 |
@@ -91,7 +99,9 @@ rejected and later corrected. No textual normalization was needed; eight accepte
 used the narrow `git apply --recount` path. No rejected Patch triggered target or regression
 tests.
 
-Final failure categories were `RESOLVED=18` for GLM and `MODEL_API=18` for GPT-5 Mini.
+Terminal statuses were `RESOLVED=18` for GLM and `MODEL_API_ERROR=18` for GPT-5 Mini.
+The latter's primary failure was `PROVIDER_REJECTED=18`, with `PROVIDER_HTTP_403` observed
+18 times.
 There was no confirmed RepoSuture framework defect, no duplicate resume execution, and no
 attempt from another commit in this dataset.
 

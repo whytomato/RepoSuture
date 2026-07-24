@@ -10,11 +10,15 @@ from pydantic import ValidationError
 
 from reposuture.reporting import (
     FinalStatus,
+    ObservedFailure,
+    PatchAttemptReport,
+    PrimaryFailure,
     RunReport,
     SanitizedTraceEvent,
     TestOutcome,
     TestResultReport,
     TraceWriter,
+    classify_run_failures,
     collect_artifact_metadata,
     create_artifact_paths,
     write_report,
@@ -243,6 +247,76 @@ def resolved_report_values(tmp_path: Path) -> dict[str, object]:
         "artifacts": artifact_mapping(tmp_path),
         "artifact_metadata": artifact_metadata(tmp_path),
     }
+
+
+def test_primary_failure_preserves_regression_evidence_after_later_search_error(
+    tmp_path: Path,
+) -> None:
+    values = resolved_report_values(tmp_path)
+    values.update(
+        {
+            "final_status": FinalStatus.AGENT_BUDGET_EXHAUSTED,
+            "terminal_status": FinalStatus.AGENT_BUDGET_EXHAUSTED,
+            "failure_reason": "maximum model turns reached",
+            "workflow": "agent_repair",
+            "patch_applied": False,
+            "regression_result": TestResultReport.failed_observed(),
+            "total_patch_attempts": 1,
+            "patch_attempts": [
+                PatchAttemptReport(
+                    attempt_id=1,
+                    patch_sha256="7" * 64,
+                    patch_size=10,
+                    affected_files=["src/main/java/App.java"],
+                    file_classifications={"src/main/java/App.java": "production"},
+                    accepted=True,
+                )
+            ],
+            "provider_accepted": True,
+            "model_executed": True,
+            "model_tool_call_observed": True,
+        }
+    )
+    report = RunReport.model_validate(values)
+    now = datetime.now(UTC)
+    events = [
+        SanitizedTraceEvent(
+            sequence=1,
+            timestamp=now,
+            event_type="regression_test_completed",
+            status="FAIL",
+        ),
+        SanitizedTraceEvent(
+            sequence=2,
+            timestamp=now,
+            event_type="candidate_reverted",
+            status="REVERTED",
+        ),
+        SanitizedTraceEvent(
+            sequence=3,
+            timestamp=now,
+            event_type="tool_execution_completed",
+            status="FAILED",
+            metadata={"tool_name": "search_code"},
+        ),
+        SanitizedTraceEvent(
+            sequence=4,
+            timestamp=now,
+            event_type="budget_exhausted",
+            status="MODEL_TURNS",
+        ),
+    ]
+
+    classification = classify_run_failures(report, events)
+
+    assert classification.terminal_status is FinalStatus.AGENT_BUDGET_EXHAUSTED
+    assert classification.primary_failure is PrimaryFailure.REGRESSION_UNRESOLVED
+    assert classification.observed_failures == [
+        ObservedFailure.REGRESSION_FAILED,
+        ObservedFailure.CANDIDATE_REVERTED,
+        ObservedFailure.SEARCH_TOOL_ERROR,
+        ObservedFailure.BUDGET_EXHAUSTED,
+    ]
 
 
 @pytest.mark.parametrize(

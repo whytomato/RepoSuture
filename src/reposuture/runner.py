@@ -348,6 +348,7 @@ def verify_case(
                             try:
                                 regression_execution = maven.run_regression(
                                     worktree,
+                                    case.regression_tests,
                                     timeout_seconds=case.regression_timeout_seconds,
                                 )
                                 regression = regression_execution.as_report()
@@ -545,6 +546,7 @@ def verify_case(
         worktree_retained=worktree_retained,
         worktree_exists_at_report=worktree_exists_at_report,
         final_status=final_status,
+        terminal_status=final_status,
         failure_reason=failure_reason,
         artifacts=artifacts.as_report_mapping(),
         artifact_metadata=artifact_metadata,

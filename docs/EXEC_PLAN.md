@@ -2,6 +2,97 @@
 
 Last updated: 2026-07-24
 
+## 2026-07-24 RepoSuture Release 0.4 — evaluation semantics, V2 breadth, and feedback ablation
+
+### Living progress
+
+- [x] Confirm the renamed primary checkout is clean `main` at
+  `01e75fa972f2bd9202419caacae776f36004e9e2`, synchronized with
+  `whytomato/RepoSuture`, with no Git operation in progress.
+- [x] Reinstall the renamed editable package into the user-provided `patchpilot` Conda
+  Python 3.11 environment after the local directory rename; no source change was needed.
+- [x] Re-read the engineering rules, public documentation, historical results, existing
+  real-world source locks, CI, benchmark matrix, report models, provider adapter, and Agent
+  repair loop before editing.
+- [x] Separate assigned, Provider-accepted, model-executed, model-tool-call, resolved,
+  Provider-rejected, and infrastructure-failed attempt counts; make zero-denominator model
+  capability and its Wilson interval explicitly `null`/N/A.
+- [x] Replace new single-category failure output with one centralized evidence classifier
+  producing terminal status, primary failure, and ordered deduplicated observed failures,
+  while retaining explicit legacy loaders.
+- [x] Prefer `REPOSUTURE_MODEL` / `REPOSUTURE_COMPARISON_MODEL`, retain one-warning-per-process
+  fallback for the two deprecated `PATCHPILOT_*` names, and keep live credentials out of
+  deterministic commands and artifacts.
+- [x] Add the `single-candidate-no-feedback` execution mode and an interleaved, resumable
+  DeepSeek-only ablation command without duplicating or weakening `RepairRunner`.
+- [x] Research no more than twelve upstream candidates and lock exactly five additional
+  production Java/Maven Bugs so `maven-real-world-v2` has eight Cases, at least five
+  repositories/categories, and the required cross-file/regression-sensitive coverage.
+- [x] Run targeted tests while implementing, then one successful full pytest/Ruff/mypy gate
+  and exactly one each of the specified deterministic/scripted/replay integrations.
+- [ ] Commit the validated implementation locally without pushing; use that exact clean
+  commit for all live evidence.
+- [ ] Confirm both exact OpenRouter model ids and a 28-attempt repair plan plus 12-attempt
+  feedback-ablation plan, never exceeding forty assigned live attempts and never replacing
+  failures.
+- [ ] Publish only reviewed sanitized JSON/Markdown evidence, commit it locally, perform the
+  final integrity scan, push `main` exactly once, and observe GitHub Actions at most once.
+
+### Release 0.4 invariants
+
+- The deterministic Git/Maven/JUnit oracle, path and Patch policy, worktree isolation,
+  rollback, artifact integrity, provider-independent tool loop, and six model-visible tools
+  remain unchanged authorities for `RESOLVED`.
+- Provider availability is not model repair capability. A request rejected before a usable
+  model response remains an assigned end-to-end failure but contributes no model-capability
+  denominator.
+- A later weak event cannot overwrite stronger verification evidence. In particular,
+  regression failure plus rollback remains the primary failure even if a later search error
+  precedes budget exhaustion.
+- The V1 three Cases and suite remain immutable. V2 adds only locked upstream evidence;
+  full third-party repositories and build output stay in ignored caches.
+- The ablation changes only post-candidate feedback/replanning availability. It reuses the
+  same model, public Case, tools, policy, target/regression tests, verifier, and source
+  commit.
+
+### Implementation evidence in progress
+
+- Report schema v2 now records Provider/model lifecycle flags and the three independent
+  rate denominators. Shared Wilson calculation returns no interval for a zero denominator;
+  JSON writes `null`, CSV writes `N/A`, and Markdown renders `N/A`.
+- One centralized trace-aware classifier preserves terminal status while deriving the
+  strongest primary failure and ordered non-exclusive observations. Regression evidence
+  is no longer overwritten by a later search error or budget terminal.
+- `REPOSUTURE_MODEL` and `REPOSUTURE_COMPARISON_MODEL` are primary. The two legacy
+  `PATCHPILOT_*` names remain one-warning-per-process fallbacks, and Provider 4xx
+  rejections are counted separately from accepted/model-executed lifecycles.
+- `benchmark-matrix` accepts deterministic per-Case run counts; the locked V2 plan is
+  28 attempts. `benchmark-ablation` reuses `repair_case` for the two mode-specific,
+  strictly resumable trajectories and the locked six-Case plan is 12 attempts.
+- Five additions were selected after twelve bounded candidate investigations: Commons
+  Codec zero BigInteger, Commons Text lone-quote CSV, Commons IO bounded-reader skip,
+  Commons CSV supplementary delimiter, and Commons BeanUtils non-Double conversion.
+  Their real target tests were run through Maven/JUnit and reproduced the intended
+  baseline failures before the single final V2 validation.
+- The final quality gate passed with `309 passed, 1 skipped, 2 deselected` in 516.38
+  seconds; Ruff reported no violations and mypy reported no issues in 27 source files.
+- Final deterministic validation passed 6/6 for MVP and 8/8 for real-world V2. All Cases
+  reproduced the selected target failure, passed the patched target and configured
+  regression scope, preserved the original repository, and cleaned the temporary
+  worktree. The V2 fingerprint is
+  `65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`.
+- The representative scripted matrix resolved 4/4 attempts across two Case/model
+  identities. The scripted regression-trap ablation resolved full-agent and left the
+  one-candidate mode unresolved after target PASS/regression FAIL, for 1/2; both paths
+  executed real Git, Maven, and JUnit. Legacy absolute-report relocation/replay
+  compatibility passed its focused smoke.
+- During the first V2 validation, four upstream full suites exposed environmental tests
+  outside the benchmark contract: external HTTP, Windows symlink privilege, and CRLF
+  resource/hash assumptions. RepoSuture now supports an explicit safe JUnit regression
+  list; every selector must be observed in Surefire XML. The four affected Cases use
+  three locked non-target regressions each, while the other four still use complete
+  single-module suites. Targeted verification and the final 8/8 validation passed.
+
 ## 2026-07-22 RepoSuture Release 0.3 — rename, repeated evaluation, and real-world bugs
 
 ### Living progress

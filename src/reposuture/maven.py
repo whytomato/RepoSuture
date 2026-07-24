@@ -72,6 +72,7 @@ class _SurefireEvidence:
     error: str | None = None
     skipped: int = 0
     report_files: int = 0
+    missing_required_targets: tuple[str, ...] = ()
 
 
 class MavenRunner:
@@ -88,8 +89,16 @@ class MavenRunner:
             "test",
         ]
 
-    def regression_command(self, worktree: Path) -> list[str]:
-        return [self._maven_executable(worktree), "-q", "test"]
+    def regression_command(
+        self,
+        worktree: Path,
+        regression_tests: tuple[TargetTest, ...] | None = None,
+    ) -> list[str]:
+        command = [self._maven_executable(worktree), "-q"]
+        if regression_tests is not None:
+            selectors = ",".join(test.maven_selector for test in regression_tests)
+            command.append(f"-Dtest={selectors}")
+        return [*command, "test"]
 
     def run_target(
         self,
@@ -109,16 +118,17 @@ class MavenRunner:
     def run_regression(
         self,
         worktree: Path,
+        regression_tests: tuple[TargetTest, ...] | None = None,
         *,
         timeout_seconds: float,
     ) -> MavenExecution:
         self._clear_surefire_reports(worktree)
         process = self.runner.run(
-            self.regression_command(worktree),
+            self.regression_command(worktree, regression_tests),
             cwd=worktree,
             timeout_seconds=timeout_seconds,
         )
-        return self.interpret_regression_process(process, worktree)
+        return self.interpret_regression_process(process, worktree, regression_tests)
 
     def interpret_target_process(
         self,
@@ -150,14 +160,26 @@ class MavenRunner:
         self,
         process: ProcessResult,
         worktree: Path,
+        regression_tests: tuple[TargetTest, ...] | None = None,
     ) -> MavenExecution:
         terminal = self._terminal_process_outcome(process)
         if terminal is not None:
             return terminal
 
-        evidence = self._read_surefire_evidence(worktree, target=None)
+        evidence = self._read_surefire_evidence(
+            worktree,
+            target=None,
+            required_targets=regression_tests or (),
+        )
         if evidence.error is not None:
             return self._infrastructure(process, evidence.error, evidence)
+        if evidence.missing_required_targets:
+            return self._infrastructure(
+                process,
+                "selected regression JUnit tests were not executed: "
+                + ", ".join(evidence.missing_required_targets),
+                evidence,
+            )
         if process.exit_code == 0 and evidence.executed > 0 and evidence.failures == 0:
             return self._with_evidence(process, TestOutcome.PASS, evidence)
         if process.exit_code != 0 and evidence.executed > 0 and evidence.failures > 0:
@@ -285,6 +307,7 @@ class MavenRunner:
         self,
         worktree: Path,
         target: TargetTest | None,
+        required_targets: tuple[TargetTest, ...] = (),
     ) -> _SurefireEvidence:
         try:
             reports = safe_worktree_path(worktree, "target/surefire-reports")
@@ -299,6 +322,9 @@ class MavenRunner:
         target_executed = False
         target_failed = False
         skipped_count = 0
+        required_executed = {
+            required.maven_selector: False for required in required_targets
+        }
         total_size = 0
         report_files: list[Path] = []
         try:
@@ -368,6 +394,9 @@ class MavenRunner:
                         target_found = True
                         target_executed = not skipped
                         target_failed = failed
+                    for required in required_targets:
+                        if self._matches_target(testcase.attrib, required) and not skipped:
+                            required_executed[required.maven_selector] = True
         except (OSError, ElementTree.ParseError, PathSecurityError) as exc:
             return _SurefireEvidence(
                 executed,
@@ -387,6 +416,11 @@ class MavenRunner:
             target_failed,
             skipped=skipped_count,
             report_files=len(report_files),
+            missing_required_targets=tuple(
+                selector
+                for selector, executed_target in required_executed.items()
+                if not executed_target
+            ),
         )
 
     @staticmethod

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import tempfile
 import time
 from collections import Counter
@@ -43,6 +44,7 @@ from reposuture.patching import (
 )
 from reposuture.process import ProcessRunner
 from reposuture.reporting import (
+    AgentExecutionMode,
     ArtifactPaths,
     Classification,
     FinalStatus,
@@ -53,6 +55,7 @@ from reposuture.reporting import (
     TestOutcome,
     TestResultReport,
     TraceWriter,
+    classify_run_failures,
     collect_artifact_metadata,
     create_artifact_paths,
     write_report,
@@ -117,6 +120,7 @@ def repair_case(
     progress: ProgressCallback | None = None,
     trace_observer: TraceObserver | None = None,
     run_id: str | None = None,
+    execution_mode: AgentExecutionMode = AgentExecutionMode.FULL_AGENT,
 ) -> RunReport:
     """Run one bounded repair and persist deterministic evidence for every outcome."""
 
@@ -149,7 +153,11 @@ def repair_case(
     trace.emit(
         "run_started",
         status="STARTED",
-        metadata={"case_file_name": case_file.name, "keep_worktree": keep_worktree},
+        metadata={
+            "case_file_name": case_file.name,
+            "keep_worktree": keep_worktree,
+            "execution_mode": execution_mode.value,
+        },
     )
 
     baseline = TestResultReport.not_run()
@@ -177,6 +185,7 @@ def repair_case(
     provider: str | None = None
     model_name: str | None = None
     model_turns = 0
+    model_responses = 0
     tool_calls = 0
     tool_counts: Counter[str] = Counter()
     target_executions = 0
@@ -221,6 +230,8 @@ def repair_case(
             turn_limit = max_turns or case.agent_budgets.max_model_turns
             tool_limit = max_tool_calls or case.agent_budgets.max_tool_calls
             patch_limit = max_patch_attempts or case.agent_budgets.max_patch_attempts
+            if execution_mode is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK:
+                patch_limit = 1
             wall_limit = max_wall_clock_seconds or case.agent_budgets.max_wall_clock_seconds
             target_limit = (
                 max_target_test_executions
@@ -255,7 +266,7 @@ def repair_case(
                     final_status = FinalStatus.MODEL_CONFIGURATION_ERROR
                     failure_reason = (
                         "OpenAI repair requires non-empty OPENAI_API_KEY and "
-                        "PATCHPILOT_MODEL values (or --model); configuration was invalid"
+                        "REPOSUTURE_MODEL values (or --model); configuration was invalid"
                     )
                 except Exception as exc:
                     del exc
@@ -344,6 +355,7 @@ def repair_case(
                             "max_target_test_executions": target_limit,
                             "max_regression_executions": regression_limit,
                             "max_wall_clock_seconds": wall_limit,
+                            "execution_mode": execution_mode.value,
                         },
                     )
                     environment = RepoSutureToolEnvironment(
@@ -358,7 +370,11 @@ def repair_case(
                     messages = [
                         AgentMessage(
                             role="user",
-                            content=_repair_task_message(case, baseline_execution),
+                            content=_repair_task_message(
+                                case,
+                                baseline_execution,
+                                execution_mode=execution_mode,
+                            ),
                         )
                     ]
                     continuation: ProviderContinuation | None = None
@@ -378,7 +394,10 @@ def repair_case(
                             trace.emit("budget_exhausted", status="MODEL_TURNS")
                             break
 
-                        if pending_replan is not None:
+                        if (
+                            pending_replan is not None
+                            and execution_mode is AgentExecutionMode.FULL_AGENT
+                        ):
                             trace.emit(
                                 "agent_replan_requested",
                                 status="FEEDBACK_RETURNED",
@@ -414,10 +433,20 @@ def repair_case(
                         except ModelConfigurationError as exc:
                             final_status = FinalStatus.MODEL_CONFIGURATION_ERROR
                             failure_reason = str(exc)
+                            trace.emit(
+                                "model_request_failed",
+                                status=final_status.value,
+                                metadata=_provider_failure_metadata(exc),
+                            )
                             break
                         except (ModelAPIError, ModelProtocolError) as exc:
                             final_status = FinalStatus.MODEL_API_ERROR
                             failure_reason = str(exc)
+                            trace.emit(
+                                "model_request_failed",
+                                status=final_status.value,
+                                metadata=_provider_failure_metadata(exc),
+                            )
                             break
                         except Exception as exc:
                             final_status = FinalStatus.MODEL_API_ERROR
@@ -425,8 +454,14 @@ def repair_case(
                             failure_reason = (
                                 f"model client failed: {type(exc).__name__}: {detail}"
                             )[:4_000]
+                            trace.emit(
+                                "model_request_failed",
+                                status=final_status.value,
+                                metadata=_provider_failure_metadata(exc),
+                            )
                             break
                         request_duration = max(0.0, time.monotonic() - request_started)
+                        model_responses += 1
                         model_latency += response.latency_seconds or request_duration
                         continuation = response.continuation
                         model_name = response.model or model_name
@@ -629,6 +664,36 @@ def repair_case(
                                         else None
                                     ),
                                 }
+                                if (
+                                    execution_mode
+                                    is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK
+                                ):
+                                    trace.emit(
+                                        "tool_execution_completed",
+                                        status="FAILED",
+                                        duration=max(
+                                            0.0,
+                                            time.monotonic() - tool_started_monotonic,
+                                        ),
+                                        metadata={
+                                            "tool_name": call.name,
+                                            "model_turn": model_turns,
+                                            "truncated": _result_truncated(result),
+                                            "observation": _safe_tool_observation(result),
+                                        },
+                                    )
+                                    final_status = (
+                                        FinalStatus.POLICY_REJECTED
+                                        if attempt.error_code
+                                        is PatchErrorCode.PATCH_POLICY_REJECTED
+                                        else FinalStatus.PATCH_REJECTED
+                                    )
+                                    failure_reason = (
+                                        attempt.failure_reason
+                                        or "the single candidate Patch was rejected"
+                                    )
+                                    pending_replan = None
+                                    break
 
                             if result.output and result.output.get("terminal") is True:
                                 messages.append(
@@ -696,6 +761,14 @@ def repair_case(
                                 final_status = FinalStatus.AGENT_BUDGET_EXHAUSTED
                                 failure_reason = "maximum target-test executions reached"
                                 _rollback_candidate(environment, patcher, inspection)
+                                trace.emit(
+                                    "candidate_reverted",
+                                    status="REVERTED",
+                                    metadata={
+                                        "reason": "TARGET_TEST_BUDGET",
+                                        "patch_attempt_id": len(environment.patch_attempts),
+                                    },
+                                )
                                 patch_applied = False
                                 verification_terminal = True
                                 messages.append(
@@ -764,14 +837,35 @@ def repair_case(
                                 verification_terminal = True
                             elif patched_target.outcome is TestOutcome.FAIL:
                                 _rollback_candidate(environment, patcher, inspection)
+                                trace.emit(
+                                    "candidate_reverted",
+                                    status="REVERTED",
+                                    metadata={
+                                        "reason": "TARGET_TEST_FAILED",
+                                        "patch_attempt_id": len(environment.patch_attempts),
+                                    },
+                                )
                                 patch_applied = False
-                                pending_replan = {
-                                    "reasons": [
-                                        "TARGET_TEST_FAILED",
-                                        "CANDIDATE_REVERTED",
-                                    ],
-                                    "patch_attempt_id": len(environment.patch_attempts),
-                                }
+                                if (
+                                    execution_mode
+                                    is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK
+                                ):
+                                    final_status = FinalStatus.TARGET_TEST_FAILED
+                                    failure_reason = (
+                                        "the single accepted candidate did not pass "
+                                        "the target test"
+                                    )
+                                    verification_terminal = True
+                                else:
+                                    pending_replan = {
+                                        "reasons": [
+                                            "TARGET_TEST_FAILED",
+                                            "CANDIDATE_REVERTED",
+                                        ],
+                                        "patch_attempt_id": len(
+                                            environment.patch_attempts
+                                        ),
+                                    }
                                 result = _with_verification_observation(
                                     result,
                                     target=patched_target,
@@ -857,16 +951,37 @@ def repair_case(
                                         _rollback_candidate(
                                             environment, patcher, inspection
                                         )
+                                        trace.emit(
+                                            "candidate_reverted",
+                                            status="REVERTED",
+                                            metadata={
+                                                "reason": "REGRESSION_FAILED",
+                                                "patch_attempt_id": len(
+                                                    environment.patch_attempts
+                                                ),
+                                            },
+                                        )
                                         patch_applied = False
-                                        pending_replan = {
-                                            "reasons": [
-                                                "REGRESSION_FAILED",
-                                                "CANDIDATE_REVERTED",
-                                            ],
-                                            "patch_attempt_id": len(
-                                                environment.patch_attempts
-                                            ),
-                                        }
+                                        if (
+                                            execution_mode
+                                            is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK
+                                        ):
+                                            final_status = FinalStatus.REGRESSION_FAILED
+                                            failure_reason = (
+                                                "the single accepted candidate passed "
+                                                "the target but failed regression"
+                                            )
+                                            verification_terminal = True
+                                        else:
+                                            pending_replan = {
+                                                "reasons": [
+                                                    "REGRESSION_FAILED",
+                                                    "CANDIDATE_REVERTED",
+                                                ],
+                                                "patch_attempt_id": len(
+                                                    environment.patch_attempts
+                                                ),
+                                            }
                                         result = _with_verification_observation(
                                             result,
                                             target=patched_target,
@@ -875,7 +990,10 @@ def repair_case(
                                         )
 
                             if verification_terminal:
-                                messages.append(AgentMessage(role="tool", tool_result=result))
+                                if execution_mode is AgentExecutionMode.FULL_AGENT:
+                                    messages.append(
+                                        AgentMessage(role="tool", tool_result=result)
+                                    )
                                 trace.emit(
                                     "tool_execution_completed",
                                     status="OK" if result.success else "FAILED",
@@ -983,6 +1101,7 @@ def repair_case(
             "regression_executions": regression_executions,
             "duration_seconds": total_duration,
             "failure_reason": failure_reason,
+            "execution_mode": execution_mode.value,
         },
     )
     trace.emit(
@@ -1047,6 +1166,28 @@ def repair_case(
         fallback=model_turns,
     )
     api_error_count = _client_counter(active_llm, "api_error_count", fallback=0)
+    provider_accepted_count = _client_counter(
+        active_llm,
+        "provider_accepted_count",
+        fallback=model_responses,
+    )
+    provider_rejected_count = _client_counter(
+        active_llm,
+        "provider_rejected_count",
+        fallback=0,
+    )
+    model_executed_count = _client_counter(
+        active_llm,
+        "model_executed_count",
+        fallback=model_responses,
+    )
+    provider_accepted = provider_accepted_count > 0
+    model_executed = model_executed_count > 0
+    provider_rejected = (
+        provider_rejected_count > 0
+        and not provider_accepted
+        and not model_executed
+    )
     report = RunReport(
         run_id=artifacts.run_id,
         task_id=case.id if case is not None else task_hint,
@@ -1076,10 +1217,12 @@ def repair_case(
         worktree_retained=worktree_retained,
         worktree_exists_at_report=worktree_exists_at_report,
         final_status=final_status,
+        terminal_status=final_status,
         failure_reason=failure_reason,
         artifacts=artifacts.as_report_mapping(),
         artifact_metadata=artifact_metadata,
         workflow="agent_repair",
+        execution_mode=execution_mode,
         provider=provider,
         model=model_name,
         issue_title=case.issue_title if case is not None else None,
@@ -1096,6 +1239,10 @@ def repair_case(
         reasoning_token_usage=reasoning_tokens,
         model_request_count=model_request_count,
         api_error_count=api_error_count,
+        provider_accepted=provider_accepted,
+        provider_rejected=provider_rejected,
+        model_executed=model_executed,
+        model_tool_call_observed=tool_calls > 0,
         api_request_ids=api_request_ids,
         model_latency_seconds=model_latency,
         test_execution_duration_seconds=test_execution_duration,
@@ -1103,7 +1250,16 @@ def repair_case(
         presentation_warning=trace.observer_warning,
         final_deterministic_status=final_status,
     )
-    trajectory = render_trajectory_markdown(report, load_trace_events(artifacts.trace))
+    trace_events = load_trace_events(artifacts.trace)
+    classification = classify_run_failures(report, trace_events)
+    report = report.model_copy(
+        update={
+            "terminal_status": classification.terminal_status,
+            "primary_failure": classification.primary_failure,
+            "observed_failures": classification.observed_failures,
+        }
+    )
+    trajectory = render_trajectory_markdown(report, trace_events)
     write_trajectory_markdown(artifacts.trajectory, trajectory)
     report = RunReport.model_validate(
         {
@@ -1161,6 +1317,7 @@ def _run_regression(
 ) -> MavenExecution:
     execution = maven.run_regression(
         worktree,
+        case.regression_tests,
         timeout_seconds=case.regression_timeout_seconds,
     )
     _append_execution_log(log_path, execution, attempt_label)
@@ -1226,7 +1383,12 @@ def _compact_test_result(result: TestResultReport) -> dict[str, object]:
     }
 
 
-def _repair_task_message(case: AgentBugCase, baseline: MavenExecution) -> str:
+def _repair_task_message(
+    case: AgentBugCase,
+    baseline: MavenExecution,
+    *,
+    execution_mode: AgentExecutionMode,
+) -> str:
     process = baseline.process
     diagnostic = {
         "outcome": baseline.outcome.value,
@@ -1239,6 +1401,13 @@ def _repair_task_message(case: AgentBugCase, baseline: MavenExecution) -> str:
         "stdout_truncated": process.stdout_truncated,
         "stderr_truncated": process.stderr_truncated,
     }
+    mode_instruction = (
+        "\nThis controlled baseline permits exactly one candidate Patch. "
+        "After that Patch is submitted, verification ends the attempt and no "
+        "test feedback or replanning turn will be provided."
+        if execution_mode is AgentExecutionMode.SINGLE_CANDIDATE_NO_FEEDBACK
+        else ""
+    )
     return (
         f"Task ID: {case.id}\n"
         f"Issue: {case.issue_title}\n"
@@ -1246,7 +1415,27 @@ def _repair_task_message(case: AgentBugCase, baseline: MavenExecution) -> str:
         f"Target test: {case.target_test.maven_selector}\n"
         "The isolated baseline target test was deterministically reproduced as failing.\n"
         f"Baseline diagnostic: {json.dumps(diagnostic, ensure_ascii=False, sort_keys=True)}"
+        f"{mode_instruction}"
     )
+
+
+def _provider_failure_metadata(exc: Exception) -> dict[str, object]:
+    """Return bounded categorical provider diagnostics without response bodies."""
+
+    if isinstance(exc, ModelProtocolError):
+        failure_kind = "PROTOCOL"
+    elif "timeout" in (type(exc).__name__ + " " + str(exc)).casefold():
+        failure_kind = "TIMEOUT"
+    elif isinstance(exc, ModelConfigurationError):
+        failure_kind = "CONFIGURATION"
+    else:
+        failure_kind = "API"
+    match = re.search(r"(?<!\d)([45]\d{2})(?!\d)", str(exc))
+    return {
+        "failure_kind": failure_kind,
+        "http_status": int(match.group(1)) if match else None,
+        "exception_type": type(exc).__name__[:100],
+    }
 
 
 def _safe_tool_arguments(call: ToolCall) -> dict[str, object]:

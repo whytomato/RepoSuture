@@ -85,6 +85,38 @@ reposuture replay-run .artifacts-live/<run-id> `
 - 循环持续到目标与回归都通过，或模型停止、策略/基础设施失败、API 失败或预算耗尽。
 - verifier 而不是模型拥有正确性判定；不会展示或重建隐藏 chain-of-thought。
 
+## Release 0.4 evaluation design
+
+Release 0.4 expands the locked real-world suite from three to eight upstream Maven/JUnit
+bugs across seven repositories. The five additions cover binary encoding, CSV parsing,
+range accounting, Unicode byte tracking, and numeric conversion. Provenance, construction,
+candidate rejections, regression scope, and hidden-solution boundaries are documented in
+[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md).
+
+The active live comparison uses only `z-ai/glm-5.2` and
+`deepseek/deepseek-v4-pro`. The original three Cases receive three attempts per model;
+the five additions receive one breadth observation per model, for 28 assigned attempts
+without a duplicated breadth matrix. A separate controlled 12-attempt DeepSeek ablation
+compares the normal feedback loop with `single-candidate-no-feedback`, which permits one
+candidate and withholds post-Patch verification from the model while retaining the same
+deterministic correctness oracle.
+
+Reports distinguish end-to-end availability from model capability:
+
+- system rate = resolved / assigned;
+- Provider acceptance = Provider-accepted / assigned;
+- capability rate = resolved / model-executed.
+
+If no model response enters the Agent loop, capability and its Wilson interval are `N/A`,
+not 0%. Historical `openai/gpt-5-mini` Release 0.3 requests were rejected upstream before
+model execution; they remain evidence of end-to-end Provider rejection, not evidence of
+0% repair capability. New reports also separate `terminal_status`, causal
+`primary_failure`, and ordered `observed_failures`.
+
+Use `REPOSUTURE_MODEL` and `REPOSUTURE_COMPARISON_MODEL` for live defaults.
+`PATCHPILOT_MODEL` and `PATCHPILOT_COMPARISON_MODEL` remain deprecated fallbacks and emit
+one stderr warning per process when used.
+
 ## Milestone history
 
 - Milestone 1：确定性复现固定 commit、应用 validation golden Patch、执行目标和完整回归。
@@ -104,17 +136,21 @@ commit `944fc6aab83c64848c4eae11f291db80ebc69041` 上完成首次 live 六 Case 
 ## Stability evaluation
 
 历史 R1 是六个 MVP Case、每 Case 一次、单模型的 **6/6 observation**；它不是
-“100% 通用成功率”，也不是 pass@k。Release 0.3 增加三次全新尝试/Case/模型的交错矩阵，
-用于观察重复运行稳定性。矩阵预检命令会明确输出
-`6 Cases x 3 runs x 2 models = 36 live attempts`，失败的完整尝试也会保留，不能用补跑替换。
+“100% 通用成功率”，也不是 pass@k。Release 0.3 的三次尝试/Case 矩阵是历史证据。
+Release 0.4 对原始三个真实 Bug 重复三次，并对五个新增 Bug 各运行一次；矩阵预检会明确输出
+28 个 live attempts，失败的完整尝试也会保留，不能用补跑替换。
 
 ```powershell
-reposuture benchmark-matrix benchmarks/suites/mvp.yaml `
-  --artifacts-dir .artifacts-live-r03-mvp-matrix `
+reposuture benchmark-matrix benchmarks/real_world/suites/maven-real-world-v2.yaml `
+  --artifacts-dir .artifacts-live-r04-real `
   --provider openai `
   --model z-ai/glm-5.2 `
-  --model openai/gpt-5-mini `
-  --runs-per-case 3 --schedule interleaved --dry-run
+  --model deepseek/deepseek-v4-pro `
+  --runs-per-case 1 `
+  --case-runs commons-lang-mid-overflow=3 `
+  --case-runs commons-collections-int-value=3 `
+  --case-runs commons-collections-flat3map-entry=3 `
+  --schedule interleaved --dry-run
 ```
 
 ## Cross-model comparison
@@ -125,19 +161,22 @@ Patch policy、endpoint 和测试 oracle；只有 model id 不同。矩阵报告
 比较是描述性的，不宣称统计显著性。Release 0.3 实际完成了固定的 36 次 live 尝试：
 `z-ai/glm-5.2` 为 18/18 `RESOLVED`，描述性 Wilson 95% 区间为 [0.824, 1.000]；
 `openai/gpt-5-mini` 的 18 次请求都在产生工具调用前被上游以 provider Terms of Service 403
-拒绝，记录为 0/18 `MODEL_API_ERROR`。因此这不是有效的修复能力胜负比较，也没有补跑失败样本。
+拒绝，记录为 18 个 Provider-rejected attempts、0 个 model-executed attempts，模型能力结果和
+能力 Wilson 区间均为 N/A；系统端到端结果仍为 0/18。因此这不是有效的修复能力胜负比较，
+也没有补跑失败样本。
 完整逐次证据和限制见
 [`reposuture-mvp-two-model-r3.md`](docs/results/reposuture-mvp-two-model-r3.md)。
 
 ## Real-world benchmark
 
-独立的 `maven-real-world-v1` 套件锁定三条真实 Apache Java/Maven bug（Commons Lang 1 条、
-Commons Collections 2 条），覆盖溢出边界、数值转换和集合语义；其中一条涉及两个生产实现。
+历史 `maven-real-world-v1` 套件锁定三条真实 Apache Java/Maven bug。Release 0.4 的
+`maven-real-world-v2` 保持这三条不变并新增五条，最终覆盖七个上游仓库、七类缺陷以及四个
+跨文件或跨组件 Case。
 完整第三方仓库只存在于忽略缓存。设计、上游 URL、许可证、筛选理由和 bootstrap 命令见
 [`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。固定的
-`3 Cases x 1 run x 2 models = 6 attempts` 已真实完成：GLM 5.2 解决 2/3，其中未解决的
+历史 `3 Cases x 1 run x 2 models = 6 attempts` 已真实完成：GLM 5.2 解决 2/3，其中未解决的
 Commons Lang 尝试真实经历目标 PASS、回归 FAIL、回滚和重规划后耗尽预算；GPT-5 Mini 的
-三次请求仍被相同的上游 403 拒绝。完整结果见
+三次请求仍被相同的上游 403 拒绝，未进入模型执行，因此能力结果为 N/A。完整历史结果见
 [`reposuture-real-world-r1.md`](docs/results/reposuture-real-world-r1.md)。
 
 ## Renamed from PatchPilot
@@ -252,7 +291,7 @@ reposuture verify-case benchmarks/cases/null-email.yaml `
 
 ```powershell
 $env:OPENAI_API_KEY = "<your-api-key>"
-$env:PATCHPILOT_MODEL = "<your-model-name>"
+$env:REPOSUTURE_MODEL = "<your-model-name>"
 
 reposuture repair benchmarks/cases/null-email-agent.yaml `
   --artifacts-dir .artifacts-live `
@@ -291,7 +330,7 @@ reposuture repair benchmarks/cases/null-email-agent.yaml `
 ```
 
 `repair` 会产生 API 费用，并受网络、账户权限、限额与所选模型能力影响。默认 pytest 不会
-访问网络或要求 API Key。只有明确设置了 `OPENAI_API_KEY` 和 `PATCHPILOT_MODEL` 时才应运行
+访问网络或要求 API Key。只有明确设置了 `OPENAI_API_KEY` 和 `REPOSUTURE_MODEL` 时才应运行
 上述 live 命令；没有真实执行时不得宣称 live 修复成功。
 
 离线 FakeLLM 验证命令会经过同一个 `RepairRunner`、真实 Git worktree、Maven 和 JUnit，
@@ -325,7 +364,7 @@ live 模式为每个 Case 建立全新的 OpenAI 会话和 worktree，默认顺�
 
 ```powershell
 $env:OPENAI_API_KEY = "<your-api-key>"
-$env:PATCHPILOT_MODEL = "<your-model-name>"
+$env:REPOSUTURE_MODEL = "<your-model-name>"
 
 reposuture benchmark benchmarks/suites/mvp.yaml `
   --artifacts-dir .artifacts-benchmark-live `
@@ -357,7 +396,7 @@ MVP 的六类缺陷为 null 输入验证、分页边界、enum/status 过滤、�
 
 Milestone 4A hardens the existing `apply_patch` boundary; it does not add Agent
 capabilities. Model text still cannot produce `RESOLVED`: Git, Maven, JUnit, the target
-test, the full regression suite, repository integrity, and artifact checks remain the
+test, the configured regression suite, repository integrity, and artifact checks remain the
 only authorities.
 
 The initial single-Case OpenRouter smoke was an engineering finding, not a model
@@ -401,7 +440,7 @@ RepoSuture provider implementation. Configure only the documented variables:
 ```powershell
 $env:OPENAI_API_KEY = "<your-openrouter-api-key>"
 $env:OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
-$env:PATCHPILOT_MODEL = "z-ai/glm-5.2"
+$env:REPOSUTURE_MODEL = "z-ai/glm-5.2"
 ```
 
 The CLI provider selector remains `--provider openai`, while live reports identify the

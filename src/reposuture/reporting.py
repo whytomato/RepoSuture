@@ -8,7 +8,7 @@ import math
 import re
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -45,6 +45,65 @@ class TestOutcome(StrEnum):
     FAIL = "FAIL"
     TIMEOUT = "TIMEOUT"
     INFRASTRUCTURE_ERROR = "INFRASTRUCTURE_ERROR"
+
+
+class AgentExecutionMode(StrEnum):
+    """Agent-loop behavior used for one repair attempt."""
+
+    FULL_AGENT = "full-agent"
+    SINGLE_CANDIDATE_NO_FEEDBACK = "single-candidate-no-feedback"
+
+
+class PrimaryFailure(StrEnum):
+    """The strongest evidence-backed causal explanation for an unresolved run."""
+
+    INVALID_CASE = "INVALID_CASE"
+    BASELINE_NOT_REPRODUCED = "BASELINE_NOT_REPRODUCED"
+    REPOSITORY_OR_ARTIFACT_INTEGRITY = "REPOSITORY_OR_ARTIFACT_INTEGRITY"
+    INFRASTRUCTURE_FAILURE = "INFRASTRUCTURE_FAILURE"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    NO_PATCH_ACCEPTED = "NO_PATCH_ACCEPTED"
+    TARGET_UNRESOLVED = "TARGET_UNRESOLVED"
+    REGRESSION_UNRESOLVED = "REGRESSION_UNRESOLVED"
+    PATCH_POLICY_BLOCKED = "PATCH_POLICY_BLOCKED"
+    TOOL_PROTOCOL_FAILURE = "TOOL_PROTOCOL_FAILURE"
+    BUDGET_EXHAUSTED_WITHOUT_PROGRESS = "BUDGET_EXHAUSTED_WITHOUT_PROGRESS"
+    MODEL_STOPPED_WITHOUT_VERIFICATION = "MODEL_STOPPED_WITHOUT_VERIFICATION"
+
+
+class ObservedFailure(StrEnum):
+    """A non-exclusive failure observation retained in trace order."""
+
+    INVALID_CASE = "INVALID_CASE"
+    BASELINE_NOT_REPRODUCED = "BASELINE_NOT_REPRODUCED"
+    REPOSITORY_INTEGRITY_FAILED = "REPOSITORY_INTEGRITY_FAILED"
+    ARTIFACT_INTEGRITY_FAILED = "ARTIFACT_INTEGRITY_FAILED"
+    INFRASTRUCTURE_ERROR = "INFRASTRUCTURE_ERROR"
+    PROVIDER_REJECTED = "PROVIDER_REJECTED"
+    PROVIDER_HTTP_403 = "PROVIDER_HTTP_403"
+    MODEL_API_TIMEOUT = "MODEL_API_TIMEOUT"
+    MODEL_API_ERROR = "MODEL_API_ERROR"
+    MODEL_STOPPED = "MODEL_STOPPED"
+    TOOL_PROTOCOL_ERROR = "TOOL_PROTOCOL_ERROR"
+    SEARCH_TOOL_ERROR = "SEARCH_TOOL_ERROR"
+    READ_TOOL_ERROR = "READ_TOOL_ERROR"
+    PATCH_REJECTED = "PATCH_REJECTED"
+    PATCH_GIT_CHECK_FAILED = "PATCH_GIT_CHECK_FAILED"
+    PATCH_POLICY_REJECTED = "PATCH_POLICY_REJECTED"
+    TARGET_TEST_FAILED = "TARGET_TEST_FAILED"
+    REGRESSION_FAILED = "REGRESSION_FAILED"
+    CANDIDATE_REVERTED = "CANDIDATE_REVERTED"
+    BUDGET_EXHAUSTED = "BUDGET_EXHAUSTED"
+
+
+class FailureClassification(BaseModel):
+    """Centralized terminal/causal/non-exclusive failure projection."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    terminal_status: FinalStatus
+    primary_failure: PrimaryFailure | None
+    observed_failures: list[ObservedFailure] = Field(default_factory=list)
 
 
 class SanitizedTraceEvent(BaseModel):
@@ -289,10 +348,14 @@ class RunReport(BaseModel):
     worktree_retained: bool = False
     worktree_exists_at_report: bool = False
     final_status: FinalStatus
+    terminal_status: FinalStatus
+    primary_failure: PrimaryFailure | None = None
+    observed_failures: list[ObservedFailure] = Field(default_factory=list)
     failure_reason: str | None
     artifacts: dict[str, str]
     artifact_metadata: dict[str, ArtifactMetadata] = Field(default_factory=dict)
     workflow: Literal["deterministic_verify", "agent_repair"] = "deterministic_verify"
+    execution_mode: AgentExecutionMode = AgentExecutionMode.FULL_AGENT
     provider: Annotated[str, StringConstraints(strict=True, max_length=64)] | None = None
     model: Annotated[str, StringConstraints(strict=True, max_length=256)] | None = None
     issue_title: Annotated[
@@ -313,6 +376,10 @@ class RunReport(BaseModel):
     reasoning_token_usage: int = Field(default=0, ge=0)
     model_request_count: int = Field(default=0, ge=0)
     api_error_count: int = Field(default=0, ge=0)
+    provider_accepted: bool = False
+    provider_rejected: bool = False
+    model_executed: bool = False
+    model_tool_call_observed: bool = False
     api_request_ids: list[
         Annotated[str, StringConstraints(strict=True, max_length=512)]
     ] = Field(default_factory=list, max_length=200)
@@ -326,8 +393,43 @@ class RunReport(BaseModel):
     ] | None = None
     final_deterministic_status: FinalStatus | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def populate_compatibility_fields(cls, value: object) -> object:
+        """Load pre-0.4 reports while writing explicit neutral 0.4 semantics."""
+
+        if not isinstance(value, dict):
+            return value
+        updated = dict(value)
+        if "terminal_status" not in updated and "final_status" in updated:
+            updated["terminal_status"] = updated["final_status"]
+        if "final_status" not in updated and "terminal_status" in updated:
+            updated["final_status"] = updated["terminal_status"]
+        updated.setdefault("primary_failure", None)
+        updated.setdefault("observed_failures", [])
+        updated.setdefault("execution_mode", AgentExecutionMode.FULL_AGENT.value)
+        updated.setdefault("provider_accepted", False)
+        updated.setdefault("provider_rejected", False)
+        updated.setdefault("model_executed", False)
+        updated.setdefault("model_tool_call_observed", False)
+        return updated
+
     @model_validator(mode="after")
     def validate_final_status(self) -> Self:
+        if self.terminal_status is not self.final_status:
+            raise ValueError("terminal_status and final_status must agree")
+        if self.final_status is FinalStatus.RESOLVED and self.primary_failure is not None:
+            raise ValueError("RESOLVED reports cannot have a primary failure")
+        if len(self.observed_failures) != len(set(self.observed_failures)):
+            raise ValueError("observed failures must be ordered and deduplicated")
+        if self.provider_rejected and (
+            self.provider_accepted or self.model_executed
+        ):
+            raise ValueError("a provider-rejected run cannot contain model execution")
+        if self.model_executed and not self.provider_accepted:
+            raise ValueError("model execution requires a provider-accepted lifecycle")
+        if self.model_tool_call_observed and not self.model_executed:
+            raise ValueError("model Tool Calls require model execution")
         if self.end_time < self.start_time:
             raise ValueError("end_time must not precede start_time")
         if self.start_time.utcoffset() != UTC.utcoffset(self.start_time) or (
@@ -419,14 +521,26 @@ class RunReport(BaseModel):
             ),
             FinalStatus.TARGET_TEST_FAILED: (
                 self.baseline_test_result.outcome is TestOutcome.FAIL
-                and self.patch_applied
+                and (
+                    self.patch_applied
+                    or (
+                        self.workflow == "agent_repair"
+                        and any(attempt.accepted for attempt in self.patch_attempts)
+                    )
+                )
                 and self.patched_target_test_result.outcome
                 in {TestOutcome.FAIL, TestOutcome.TIMEOUT}
                 and self.regression_result.outcome is TestOutcome.NOT_RUN
             ),
             FinalStatus.REGRESSION_FAILED: (
                 self.baseline_test_result.outcome is TestOutcome.FAIL
-                and self.patch_applied
+                and (
+                    self.patch_applied
+                    or (
+                        self.workflow == "agent_repair"
+                        and any(attempt.accepted for attempt in self.patch_attempts)
+                    )
+                )
                 and self.patched_target_test_result.outcome is TestOutcome.PASS
                 and self.regression_result.outcome
                 in {TestOutcome.FAIL, TestOutcome.TIMEOUT}
@@ -500,6 +614,167 @@ class RunReport(BaseModel):
         elif not self.failure_reason:
             raise ValueError("non-RESOLVED reports require a failure_reason")
         return self
+
+
+def classify_run_failures(
+    report: RunReport,
+    events: Sequence[SanitizedTraceEvent],
+) -> FailureClassification:
+    """Classify one run once, preserving stronger verification evidence.
+
+    Trace order defines ``observed_failures`` order. The causal classifier then
+    applies the documented precedence instead of treating the last error as the
+    root cause.
+    """
+
+    observed: list[ObservedFailure] = []
+    target_pass_seen = report.patched_target_test_result.outcome is TestOutcome.PASS
+    regression_pass_seen = report.regression_result.outcome is TestOutcome.PASS
+
+    def add(value: ObservedFailure) -> None:
+        if value not in observed:
+            observed.append(value)
+
+    for event in events:
+        metadata = event.metadata
+        if event.event_type == "patch_attempted" and event.status == "REJECTED":
+            add(ObservedFailure.PATCH_REJECTED)
+            error_code = str(metadata.get("error_code") or "")
+            if "POLICY" in error_code:
+                add(ObservedFailure.PATCH_POLICY_REJECTED)
+            if "GIT" in error_code or "HUNK" in error_code:
+                add(ObservedFailure.PATCH_GIT_CHECK_FAILED)
+        elif event.event_type == "target_test_completed":
+            if metadata.get("phase") == "patched":
+                if event.status == TestOutcome.PASS.value:
+                    target_pass_seen = True
+                elif event.status in {
+                    TestOutcome.FAIL.value,
+                    TestOutcome.TIMEOUT.value,
+                }:
+                    add(ObservedFailure.TARGET_TEST_FAILED)
+        elif event.event_type == "regression_test_completed":
+            if event.status == TestOutcome.PASS.value:
+                regression_pass_seen = True
+            elif event.status in {
+                TestOutcome.FAIL.value,
+                TestOutcome.TIMEOUT.value,
+            }:
+                add(ObservedFailure.REGRESSION_FAILED)
+        elif event.event_type == "agent_replan_requested":
+            reasons = metadata.get("reasons")
+            if isinstance(reasons, list) and "CANDIDATE_REVERTED" in reasons:
+                add(ObservedFailure.CANDIDATE_REVERTED)
+        elif event.event_type == "candidate_reverted":
+            add(ObservedFailure.CANDIDATE_REVERTED)
+        elif event.event_type in {"tool_call_rejected", "tool_execution_completed"}:
+            tool_name = str(metadata.get("tool_name") or "")
+            failed = event.event_type == "tool_call_rejected" or event.status == "FAILED"
+            if failed and tool_name == "search_code":
+                add(ObservedFailure.SEARCH_TOOL_ERROR)
+            elif failed and tool_name == "read_file":
+                add(ObservedFailure.READ_TOOL_ERROR)
+        elif event.event_type == "model_request_failed":
+            kind = str(metadata.get("failure_kind") or "")
+            status_code = metadata.get("http_status")
+            if status_code == 403:
+                add(ObservedFailure.PROVIDER_HTTP_403)
+            if kind == "TIMEOUT":
+                add(ObservedFailure.MODEL_API_TIMEOUT)
+            elif kind == "PROTOCOL":
+                add(ObservedFailure.TOOL_PROTOCOL_ERROR)
+            else:
+                add(ObservedFailure.MODEL_API_ERROR)
+        elif event.event_type == "model_stopped":
+            add(ObservedFailure.MODEL_STOPPED)
+        elif event.event_type == "budget_exhausted":
+            add(ObservedFailure.BUDGET_EXHAUSTED)
+
+    if report.final_status is FinalStatus.INVALID_CASE:
+        add(ObservedFailure.INVALID_CASE)
+    elif report.final_status is FinalStatus.BASELINE_NOT_REPRODUCED:
+        add(ObservedFailure.BASELINE_NOT_REPRODUCED)
+    elif report.final_status is FinalStatus.INFRASTRUCTURE_ERROR:
+        add(ObservedFailure.INFRASTRUCTURE_ERROR)
+    elif report.final_status is FinalStatus.MODEL_API_ERROR:
+        add(ObservedFailure.MODEL_API_ERROR)
+    elif report.final_status is FinalStatus.MODEL_STOPPED:
+        add(ObservedFailure.MODEL_STOPPED)
+    elif report.final_status is FinalStatus.POLICY_REJECTED:
+        add(ObservedFailure.PATCH_POLICY_REJECTED)
+    elif report.final_status is FinalStatus.AGENT_BUDGET_EXHAUSTED:
+        add(ObservedFailure.BUDGET_EXHAUSTED)
+
+    detail = (report.failure_reason or "").casefold()
+    if "403" in detail and not report.model_executed:
+        add(ObservedFailure.PROVIDER_HTTP_403)
+    if report.provider_rejected:
+        add(ObservedFailure.PROVIDER_REJECTED)
+    if (
+        report.original_repository_before is not None
+        and not report.original_repository_unchanged
+    ):
+        add(ObservedFailure.REPOSITORY_INTEGRITY_FAILED)
+    if "artifact" in detail and report.final_status is FinalStatus.INFRASTRUCTURE_ERROR:
+        add(ObservedFailure.ARTIFACT_INTEGRITY_FAILED)
+
+    primary: PrimaryFailure | None
+    if report.final_status is FinalStatus.RESOLVED:
+        primary = None
+    elif report.final_status is FinalStatus.INVALID_CASE:
+        primary = PrimaryFailure.INVALID_CASE
+    elif report.final_status is FinalStatus.BASELINE_NOT_REPRODUCED:
+        primary = PrimaryFailure.BASELINE_NOT_REPRODUCED
+    elif (
+        ObservedFailure.REPOSITORY_INTEGRITY_FAILED in observed
+        or ObservedFailure.ARTIFACT_INTEGRITY_FAILED in observed
+    ):
+        primary = PrimaryFailure.REPOSITORY_OR_ARTIFACT_INTEGRITY
+    elif (
+        report.final_status is FinalStatus.INFRASTRUCTURE_ERROR
+        or report.baseline_test_result.outcome is TestOutcome.INFRASTRUCTURE_ERROR
+        or report.patched_target_test_result.outcome
+        is TestOutcome.INFRASTRUCTURE_ERROR
+        or report.regression_result.outcome is TestOutcome.INFRASTRUCTURE_ERROR
+    ):
+        primary = PrimaryFailure.INFRASTRUCTURE_FAILURE
+    elif report.provider_rejected or (
+        report.final_status
+        in {FinalStatus.MODEL_CONFIGURATION_ERROR, FinalStatus.MODEL_API_ERROR}
+        and not report.model_executed
+        and not report.provider_accepted
+    ):
+        primary = PrimaryFailure.PROVIDER_REJECTED
+    else:
+        accepted_patch = any(attempt.accepted for attempt in report.patch_attempts)
+        policy_observed = ObservedFailure.PATCH_POLICY_REJECTED in observed
+        if not accepted_patch and policy_observed:
+            primary = PrimaryFailure.PATCH_POLICY_BLOCKED
+        elif not accepted_patch and report.model_executed:
+            primary = PrimaryFailure.NO_PATCH_ACCEPTED
+        elif accepted_patch and not target_pass_seen:
+            primary = PrimaryFailure.TARGET_UNRESOLVED
+        elif target_pass_seen and not regression_pass_seen:
+            primary = PrimaryFailure.REGRESSION_UNRESOLVED
+        elif report.final_status is FinalStatus.AGENT_BUDGET_EXHAUSTED:
+            primary = PrimaryFailure.BUDGET_EXHAUSTED_WITHOUT_PROGRESS
+        elif report.final_status is FinalStatus.MODEL_STOPPED:
+            primary = PrimaryFailure.MODEL_STOPPED_WITHOUT_VERIFICATION
+        elif (
+            ObservedFailure.TOOL_PROTOCOL_ERROR in observed
+            or report.final_status is FinalStatus.MODEL_API_ERROR
+        ):
+            primary = PrimaryFailure.TOOL_PROTOCOL_FAILURE
+        elif policy_observed:
+            primary = PrimaryFailure.PATCH_POLICY_BLOCKED
+        else:
+            primary = PrimaryFailure.MODEL_STOPPED_WITHOUT_VERIFICATION
+
+    return FailureClassification(
+        terminal_status=report.final_status,
+        primary_failure=primary,
+        observed_failures=observed,
+    )
 
 
 def write_report(report: RunReport, report_path: Path) -> None:

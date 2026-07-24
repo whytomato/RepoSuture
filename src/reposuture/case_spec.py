@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
 import yaml
 from pydantic import (
@@ -14,6 +14,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 MAX_CASE_BYTES = 1_048_576
@@ -116,6 +117,7 @@ class BugCase(BaseModel):
         StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=20_000),
     ]
     target_test: TargetTest
+    regression_tests: tuple[TargetTest, ...] | None = None
     target_test_timeout_seconds: Annotated[StrictInt, Field(ge=1, le=3_600)]
     regression_timeout_seconds: Annotated[StrictInt, Field(ge=1, le=86_400)]
     golden_patch: Path
@@ -140,6 +142,11 @@ class BugCase(BaseModel):
             raise ValueError("path must not contain NUL")
         return value
 
+    @model_validator(mode="after")
+    def validate_regression_tests(self) -> Self:
+        _validate_regression_scope(self.target_test, self.regression_tests)
+        return self
+
 
 class AgentBugCase(BaseModel):
     """A model-driven repair Case that deliberately contains no candidate Patch."""
@@ -159,6 +166,7 @@ class AgentBugCase(BaseModel):
         StringConstraints(strict=True, strip_whitespace=True, min_length=1, max_length=20_000),
     ]
     target_test: TargetTest
+    regression_tests: tuple[TargetTest, ...] | None = None
     target_test_timeout_seconds: Annotated[StrictInt, Field(ge=1, le=3_600)]
     regression_timeout_seconds: Annotated[StrictInt, Field(ge=1, le=86_400)]
     expected_baseline_failure: Literal["test_failure"]
@@ -183,6 +191,28 @@ class AgentBugCase(BaseModel):
         if "\x00" in raw:
             raise ValueError("path must not contain NUL")
         return value
+
+    @model_validator(mode="after")
+    def validate_regression_tests(self) -> Self:
+        _validate_regression_scope(self.target_test, self.regression_tests)
+        return self
+
+
+def _validate_regression_scope(
+    target_test: TargetTest,
+    regression_tests: tuple[TargetTest, ...] | None,
+) -> None:
+    if regression_tests is None:
+        return
+    if not regression_tests:
+        raise ValueError("regression_tests must not be empty")
+    selectors = [test.maven_selector for test in regression_tests]
+    if len(selectors) != len(set(selectors)):
+        raise ValueError("regression_tests must not contain duplicates")
+    if target_test.maven_selector in selectors:
+        raise ValueError(
+            "regression_tests must be unrelated to the separately executed target test"
+        )
 
 
 def _resolve_from_case(case_file: Path, configured_path: Path) -> Path:
