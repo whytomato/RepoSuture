@@ -39,9 +39,9 @@ Release 0.3 的重复两模型 MVP 结果见
 [`docs/results/reposuture-mvp-two-model-r3.md`](docs/results/reposuture-mvp-two-model-r3.md)，
 真实上游 Java Bug 结果见
 [`docs/results/reposuture-real-world-r1.md`](docs/results/reposuture-real-world-r1.md)。
-Release 0.4 的部分 live 运行因通用编译失败分类缺陷而失效；透明的停止原因和原始审计计数见
+Release 0.4 的最终 28 次真实 Bug 修复评估见
 [`reposuture-real-v2-glm-deepseek.md`](docs/results/reposuture-real-v2-glm-deepseek.md)，
-未执行的反馈消融见
+12 次反馈循环消融见
 [`reposuture-feedback-ablation-deepseek.md`](docs/results/reposuture-feedback-ablation-deepseek.md)。
 
 ```mermaid
@@ -89,7 +89,7 @@ reposuture replay-run .artifacts-live/<run-id> `
 - 循环持续到目标与回归都通过，或模型停止、策略/基础设施失败、API 失败或预算耗尽。
 - verifier 而不是模型拥有正确性判定；不会展示或重建隐藏 chain-of-thought。
 
-## Release 0.4 evaluation design
+## Release 0.4 final evaluation
 
 Release 0.4 expands the locked real-world suite from three to eight upstream Maven/JUnit
 bugs across seven repositories. The five additions cover binary encoding, CSV parsing,
@@ -97,24 +97,18 @@ range accounting, Unicode byte tracking, and numeric conversion. Provenance, con
 candidate rejections, regression scope, and hidden-solution boundaries are documented in
 [`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md).
 
-The active live comparison uses only `z-ai/glm-5.2` and
-`deepseek/deepseek-v4-pro`. The original three Cases receive three attempts per model;
-the five additions receive one breadth observation per model, for 28 assigned attempts
-without a duplicated breadth matrix. A separate controlled 12-attempt DeepSeek ablation
-compares the normal feedback loop with `single-candidate-no-feedback`, which permits one
-candidate and withholds post-Patch verification from the model while retaining the same
-deterministic correctness oracle.
+The final clean comparison used only `z-ai/glm-5.2` and
+`deepseek/deepseek-v4-pro` at commit
+`e3cafd30edec3802c6bf88177e9c6a702e9c7e03`. The original three Cases received three
+attempts per model and the five additions received one breadth observation per model:
+exactly 28 assigned and completed attempts, with no replacements. GLM resolved 12/14
+and DeepSeek resolved 11/14; all 28 Provider requests entered model execution and produced
+at least one valid tool action. The combined descriptive result was 23/28, not pass@k.
 
-### Release 0.4 live status
-
-The live sequence was stopped after 15 assigned repair attempts when an accepted
-model-generated Patch that did not compile was incorrectly classified as infrastructure.
-The generic defect is fixed and covered by real Maven/JUnit rollback-and-repair tests, but
-the pre-fix observations are invalidated. Restarting the complete 28-attempt repair plan
-plus the 12-attempt ablation would have exceeded the task's cumulative 40-attempt cap, so
-RepoSuture made no further paid request. There is therefore no valid GLM-versus-DeepSeek
-Release 0.4 rate and no live ablation result. The published audit documents retain the
-partial evidence without presenting it as a model comparison.
+The controlled DeepSeek ablation completed another 12/12 assigned attempts. Full-agent
+mode resolved 6/6; `single-candidate-no-feedback` resolved 3/6, including one target-only
+false repair. This one-run-per-mode comparison is engineering evidence, not a causal or
+statistically conclusive estimate.
 
 Reports distinguish end-to-end availability from model capability:
 
@@ -152,12 +146,14 @@ commit `944fc6aab83c64848c4eae11f291db80ebc69041` 上完成首次 live 六 Case 
 
 历史 R1 是六个 MVP Case、每 Case 一次、单模型的 **6/6 observation**；它不是
 “100% 通用成功率”，也不是 pass@k。Release 0.3 的三次尝试/Case 矩阵是历史证据。
-Release 0.4 对原始三个真实 Bug 重复三次，并对五个新增 Bug 各运行一次；矩阵预检会明确输出
-28 个 live attempts，失败的完整尝试也会保留，不能用补跑替换。
+Release 0.4 对原始三个真实 Bug 重复三次，并对五个新增 Bug 各运行一次；最终预检和实跑均为
+28 个 live attempts，失败的完整尝试全部保留，没有用补跑替换。GLM 的三个原始 Case 结果为
+2/3、3/3、3/3；DeepSeek 为 1/3、3/3、3/3。五个新增 Case 的单次 breadth observation
+中，两个模型均为 4/5；单次结果不能视为稳定成功率。
 
 ```powershell
 reposuture benchmark-matrix benchmarks/real_world/suites/maven-real-world-v2.yaml `
-  --artifacts-dir .artifacts-live-r04-real `
+  --artifacts-dir .artifacts-live-r04-final-repair `
   --provider openai `
   --model z-ai/glm-5.2 `
   --model deepseek/deepseek-v4-pro `
@@ -173,7 +169,13 @@ reposuture benchmark-matrix benchmarks/real_world/suites/maven-real-world-v2.yam
 两个模型使用同一 commit、benchmark fingerprint、Case 文本、工具 schema、预算、timeout、
 Patch policy、endpoint 和测试 oracle；只有 model id 不同。矩阵报告提供逐尝试/逐 Case 结果、
 描述性 95% Wilson 区间、工具协议丢弃率、tokens、latency 和失败 taxonomy。三次尝试仍是小样本，
-比较是描述性的，不宣称统计显著性。Release 0.3 实际完成了固定的 36 次 live 尝试：
+比较是描述性的，不宣称统计显著性。Release 0.4 中 GLM 的端到端/能力结果均为 12/14
+（85.7%，描述性 Wilson 95% `[0.601, 0.960]`），DeepSeek 均为 11/14
+（78.6%，`[0.524, 0.924]`）；两者 Provider acceptance 均为 14/14。
+完整最终结果见
+[`reposuture-real-v2-glm-deepseek.md`](docs/results/reposuture-real-v2-glm-deepseek.md)。
+
+作为历史背景，Release 0.3 实际完成了固定的 36 次 live 尝试：
 `z-ai/glm-5.2` 为 18/18 `RESOLVED`，描述性 Wilson 95% 区间为 [0.824, 1.000]；
 `openai/gpt-5-mini` 的 18 次请求都在产生工具调用前被上游以 provider Terms of Service 403
 拒绝，记录为 18 个 Provider-rejected attempts、0 个 model-executed attempts，模型能力结果和
@@ -188,7 +190,14 @@ Patch policy、endpoint 和测试 oracle；只有 model id 不同。矩阵报告
 `maven-real-world-v2` 保持这三条不变并新增五条，最终覆盖七个上游仓库、七类缺陷以及四个
 跨文件或跨组件 Case。
 完整第三方仓库只存在于忽略缓存。设计、上游 URL、许可证、筛选理由和 bootstrap 命令见
-[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。固定的
+[`docs/REAL_WORLD_BENCHMARK.md`](docs/REAL_WORLD_BENCHMARK.md)。最终 V2 修复评估为
+28/28 次完整尝试：GLM 12/14、DeepSeek 11/14；两者在五个新增 Bug 上均有 4/5 单次
+breadth outcome。DeepSeek 反馈消融为 full-agent 6/6、no-feedback 3/6。完整当前结果见
+[`reposuture-real-v2-glm-deepseek.md`](docs/results/reposuture-real-v2-glm-deepseek.md)
+和
+[`reposuture-feedback-ablation-deepseek.md`](docs/results/reposuture-feedback-ablation-deepseek.md)。
+
+固定的
 历史 `3 Cases x 1 run x 2 models = 6 attempts` 已真实完成：GLM 5.2 解决 2/3，其中未解决的
 Commons Lang 尝试真实经历目标 PASS、回归 FAIL、回滚和重规划后耗尽预算；GPT-5 Mini 的
 三次请求仍被相同的上游 403 拒绝，未进入模型执行，因此能力结果为 N/A。完整历史结果见

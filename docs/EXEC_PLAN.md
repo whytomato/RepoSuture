@@ -1,10 +1,10 @@
 # RepoSuture Execution Record
 
-Last updated: 2026-07-24
+Last updated: 2026-07-25
 
-## 2026-07-24 RepoSuture Release 0.4 — evaluation semantics, V2 breadth, and feedback ablation
+## 2026-07-25 RepoSuture Release 0.4 — final evaluation and frozen release
 
-### Living progress
+### Completed release record
 
 - [x] Confirm the renamed primary checkout is clean `main` at
   `01e75fa972f2bd9202419caacae776f36004e9e2`, synchronized with
@@ -30,20 +30,18 @@ Last updated: 2026-07-24
   repositories/categories, and the required cross-file/regression-sensitive coverage.
 - [x] Run targeted tests while implementing, then one successful full pytest/Ruff/mypy gate
   and exactly one each of the specified deterministic/scripted/replay integrations.
-- [x] Commit the validated implementation locally without pushing as
-  `70551b1cd7de9ba81b739d85c10c63569ee8b378`; use that exact clean commit
-  for the initial live protocol evidence.
-- [x] Confirm both exact OpenRouter model ids and a 28-attempt repair plan plus 12-attempt
-  feedback-ablation plan. The live sequence was stopped after assignment 15 when a generic
-  candidate-compilation classification defect was confirmed; no replacement attempts were
-  made.
-- [x] Fix the generic defect with offline regression coverage, run the one permitted
-  post-defect complete quality gate, and commit the correction separately. Because a full
-  40-attempt restart would exceed the hard cap after 15 assignments, do not issue further
-  paid requests in this task.
-- [x] Prepare and review only sanitized JSON/Markdown evidence, perform the final integrity
-  scan, and leave the reviewed local commits ready for the one permitted `main` push.
-  The external push and one-time Actions observation are reported in the final task handoff.
+- [x] Complete the generic candidate-compilation classification correction and validation
+  before the immutable experiment commit
+  `e3cafd30edec3802c6bf88177e9c6a702e9c7e03`.
+- [x] Execute the fresh locked repair matrix: 28/28 assigned and completed attempts,
+  two exact models, no concurrency, no replacements, one commit, and `dirty=false`.
+- [x] Execute the fresh locked DeepSeek feedback ablation: 12/12 assigned and completed
+  attempts across six Cases and two modes, with no replacements.
+- [x] Replay-validate every report, trace, trajectory, artifact size, and SHA-256; verify
+  repository integrity, worktree cleanup, model identity, separated failure dimensions,
+  and zero credential or hidden-solution exposure.
+- [x] Replace the four provisional canonical result files and every current-status
+  document with sanitized final evidence; commit and push the documentation once.
 
 ### Release 0.4 invariants
 
@@ -62,7 +60,7 @@ Last updated: 2026-07-24
   same model, public Case, tools, policy, target/regression tests, verifier, and source
   commit.
 
-### Implementation evidence in progress
+### Implementation and validation evidence
 
 - Report schema v2 now records Provider/model lifecycle flags and the three independent
   rate denominators. Shared Wilson calculation returns no interval for a zero denominator;
@@ -93,25 +91,57 @@ Last updated: 2026-07-24
   one-candidate mode unresolved after target PASS/regression FAIL, for 1/2; both paths
   executed real Git, Maven, and JUnit. Legacy absolute-report relocation/replay
   compatibility passed its focused smoke.
-- The first live DeepSeek assignment reached valid model-requested Tool Calls and
-  deterministic resolution, so the Provider protocol gate passed. The sequence was stopped
-  during assignment 15 after a GLM candidate caused a Java compilation error that the
-  harness incorrectly labeled as infrastructure because no Surefire XML existed. This is a
-  generic phase-classification defect, not a model success/failure adjustment.
-- The correction preserves baseline compilation errors as infrastructure but records
-  accepted-candidate compilation failures as `COMPILATION_FAILED`, rolls the candidate
+- Baseline compilation errors remain infrastructure failures, while accepted-candidate
+  compilation failures are recorded as `COMPILATION_FAILED`; the runtime rolls the candidate
   back, returns bounded verification feedback in full-agent mode, and classifies unresolved
   runs as `TARGET_UNRESOLVED`. Real Maven/JUnit regression coverage proves a later valid
   Patch can still resolve after rollback.
 - The single post-defect complete quality gate passed with `312 passed, 1 skipped,
   2 deselected` in 544.25 seconds; Ruff passed and mypy reported no issues in 27 source
-  files. No paid request was issued during or after this correction.
+  files before the final immutable live experiment.
 - During the first V2 validation, four upstream full suites exposed environmental tests
   outside the benchmark contract: external HTTP, Windows symlink privilege, and CRLF
   resource/hash assumptions. RepoSuture now supports an explicit safe JUnit regression
   list; every selector must be observed in Surefire XML. The four affected Cases use
   three locked non-target regressions each, while the other four still use complete
   single-module suites. Targeted verification and the final 8/8 validation passed.
+
+### Final live evidence
+
+- Experiment commit:
+  `e3cafd30edec3802c6bf88177e9c6a702e9c7e03`; all 40 final reports record
+  `dirty=false`.
+- Repair artifact root (local ignored evidence):
+  `.artifacts-live-r04-final-repair`.
+- Ablation artifact root (local ignored evidence):
+  `.artifacts-live-r04-final-ablation`.
+- Repair plan and execution: 14 Case-runs × 2 models = 28 assigned and
+  28 completed attempts. GLM resolved 12/14; DeepSeek resolved 11/14.
+  Combined: 23/28. All 28 were Provider-accepted, model-executed, and
+  observed a valid model-requested tool action.
+- Original-Case stability: GLM Lang 2/3, Collections int 3/3, Flat3Map
+  3/3; DeepSeek Lang 1/3, Collections int 3/3, Flat3Map 3/3.
+- New-Case breadth: each model resolved 4/5 one-run observations. Both
+  stopped without accepting a Patch on the supplementary-delimiter Case.
+- Ablation plan and execution: 6 Cases × 2 modes = 12 assigned and
+  12 completed attempts. Full-agent resolved 6/6; no-feedback resolved
+  3/6 and produced one target-only false repair.
+- Canonical reports:
+  [`results/reposuture-real-v2-glm-deepseek.md`](results/reposuture-real-v2-glm-deepseek.md)
+  and
+  [`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md).
+- The documentation commit is the commit containing this completed
+  record, with message `docs: finalize RepoSuture 0.4 evaluation`; its
+  exact SHA is recorded in the release handoff because a commit cannot
+  embed its own final object id.
+
+### Frozen state and remaining limitations
+
+RepoSuture 0.4 is frozen after this final documentation commit. No Release
+0.4 evaluation task remains unchecked. The three repetitions per original
+Case are still a small stability sample; each added Case and each ablation
+mode has one observation; results are descriptive, are not pass@k, and do
+not establish universal Java repair capability or causal certainty.
 
 ## 2026-07-22 RepoSuture Release 0.3 — rename, repeated evaluation, and real-world bugs
 

@@ -90,6 +90,16 @@ not sent back to the model, no REPLAN occurs, and no second candidate is allowed
 `RESOLVED` retains the identical deterministic oracle. This isolates the engineering value
 of verification feedback without introducing another Agent or provider path.
 
+The final Release 0.4 controlled run used six locked real-world Cases and
+`deepseek/deepseek-v4-pro`: full-agent resolved 6/6 while
+single-candidate-no-feedback resolved 3/6. The BeanUtils full-agent run
+used target-test failure, rollback, structured Patch rejection, and
+REPLAN before resolving; the no-feedback Lang run passed its target but
+failed regression and could not replan. No full-agent run consumed
+regression-failure feedback in this small sample, so the comparison is
+engineering evidence rather than causal proof. See
+[`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md).
+
 ## Budgets and termination
 
 Cases define independent limits for model turns, tool calls, Patch attempts, target-test

@@ -101,7 +101,7 @@ new Case:
 ```powershell
 reposuture benchmark-matrix `
   benchmarks/real_world/suites/maven-real-world-v2.yaml `
-  --artifacts-dir .artifacts-live-r04-real `
+  --artifacts-dir .artifacts-live-r04-final-repair `
   --provider openai `
   --model z-ai/glm-5.2 `
   --model deepseek/deepseek-v4-pro `
@@ -118,6 +118,32 @@ supplementary delimiter, and BeanUtils non-Double conversion. It spans six Cases
 repositories, several categories, cross-component behavior, and regression-sensitive
 behavior. The exact machine-readable selection is
 `benchmarks/real_world/suites/maven-real-world-v2-feedback-ablation.yaml`.
+
+## Final Release 0.4 live evidence
+
+The final clean evaluation ran at commit
+`e3cafd30edec3802c6bf88177e9c6a702e9c7e03` with `dirty=false` and the
+locked fingerprint
+`65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`.
+It completed exactly 28/28 repair attempts with no replacements:
+
+- `z-ai/glm-5.2`: 12/14 RESOLVED;
+- `deepseek/deepseek-v4-pro`: 11/14 RESOLVED;
+- original Cases: Lang 2/3 versus 1/3, Collections int 3/3 versus 3/3,
+  and Flat3Map 3/3 versus 3/3;
+- new Cases: each model resolved 4/5 one-run breadth observations; both
+  stopped without a Patch on the supplementary-delimiter Case.
+
+The controlled DeepSeek ablation completed 12/12 attempts. Full-agent
+resolved 6/6; single-candidate-no-feedback resolved 3/6 and produced one
+target-only false repair. These are descriptive observations: three
+repetitions remain a small stability sample, and one-run breadth or
+ablation outcomes are not stable rates or causal proof.
+
+Canonical sanitized evidence:
+
+- [`results/reposuture-real-v2-glm-deepseek.md`](results/reposuture-real-v2-glm-deepseek.md)
+- [`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md)
 
 `--write-lock` is a maintainer-only operation after manual provenance review. Default CI
 does not fetch third-party repositories. The manual `Real-world benchmark validation`

@@ -1,49 +1,312 @@
 {
-  "schema_version": 1,
-  "report_kind": "live_ablation_not_executed",
-  "generated_at_utc": "2026-07-24T16:09:54Z",
-  "evaluation_valid": false,
-  "status": "NOT_EXECUTED",
-  "reason": "The preceding repair dataset was invalidated by a generic framework defect. Restarting the required 28 repair attempts plus 12 ablation attempts after 15 prior assignments would exceed the hard cap of 40.",
-  "model": "deepseek/deepseek-v4-pro",
-  "provider": "openai",
-  "endpoint": "https://openrouter.ai/api/v1",
-  "suite_id": "maven-real-world-v2-feedback-ablation",
-  "schedule": "interleaved",
-  "sequential": true,
-  "cases": [
-    "commons-lang-mid-overflow",
-    "commons-collections-int-value",
-    "commons-codec-zero-big-integer",
-    "commons-io-bounded-reader-skip",
-    "commons-csv-supplementary-delimiter",
-    "commons-beanutils-nondouble-number"
-  ],
-  "modes": [
-    "full-agent",
-    "single-candidate-no-feedback"
-  ],
-  "planned_attempts": 12,
-  "assigned_attempts": 0,
-  "completed_attempts": 0,
-  "replacement_attempts": 0,
-  "metrics": {
-    "full-agent": null,
-    "single-candidate-no-feedback": null
+  "schema_version": 2,
+  "evaluation_id": "reposuture-feedback-ablation-deepseek-final",
+  "report_kind": "final_live_feedback_ablation",
+  "evaluation_valid": true,
+  "evaluation_window_utc": {
+    "started": "2026-07-25T13:22:39.963223Z",
+    "completed": "2026-07-25T14:16:01.817650Z"
   },
-  "benefit_attribution": {
-    "patch_rejection_feedback": null,
-    "target_test_feedback": null,
-    "regression_feedback": null,
-    "rollback": null,
-    "replanning": null
+  "dataset": {
+    "project_git_commit": "e3cafd30edec3802c6bf88177e9c6a702e9c7e03",
+    "project_worktree_dirty": false,
+    "requested_provider": "openai",
+    "provider": "openrouter",
+    "provider_display": "OpenRouter-compatible Responses API",
+    "endpoint": "https://openrouter.ai/api/v1",
+    "model": "deepseek/deepseek-v4-pro",
+    "suite_id": "maven-real-world-v2",
+    "benchmark_fingerprint": "65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2",
+    "schedule": "deterministic sequential interleaving",
+    "dry_run_plan_sha256": "6f7f9181cd50fc622e373b3c4585bc0ae8e78da353de563af05ed1a58f52616c",
+    "invalidated_partial_observations_reused": 0,
+    "gpt_models_used": 0
   },
-  "scripted_smoke": {
-    "live_model_evidence": false,
-    "attempts": 2,
-    "resolved": 1,
-    "full_agent_result": "RESOLVED",
-    "single_candidate_no_feedback_result": "REGRESSION_FAILED",
-    "real_git_maven_junit": true
-  }
+  "plan": {
+    "cases": 6,
+    "modes": [
+      "full-agent",
+      "single-candidate-no-feedback"
+    ],
+    "runs_per_case_mode": 1,
+    "assigned_attempts": 12,
+    "completed_attempts": 12,
+    "replacement_attempts": 0
+  },
+  "combined_metrics": {
+    "assigned_attempts": 12,
+    "provider_accepted_attempts": 12,
+    "model_executed_attempts": 12,
+    "model_tool_call_attempts": 12,
+    "resolved_attempts": 9,
+    "target_pass_count": 10,
+    "regression_pass_count": 9,
+    "target_only_false_repairs": 1,
+    "model_turns": 100,
+    "model_requests": 100,
+    "generated_tool_calls": 113,
+    "executed_tool_calls": 98,
+    "discarded_tool_calls": 15,
+    "patch_attempts": 13,
+    "rejected_patch_attempts": 1,
+    "input_tokens": 650041,
+    "output_tokens": 46375,
+    "reasoning_tokens": 31498,
+    "model_latency_seconds": 1259.7743151000468,
+    "test_duration_seconds": 1848.7050000000162,
+    "wall_clock_duration_seconds": 3200.7840000000433,
+    "terminal_status_distribution": {
+      "RESOLVED": 9,
+      "MODEL_STOPPED": 2,
+      "REGRESSION_FAILED": 1
+    },
+    "primary_failure_distribution": {
+      "NO_PATCH_ACCEPTED": 2,
+      "REGRESSION_UNRESOLVED": 1
+    },
+    "observed_failure_occurrence_counts": {
+      "CANDIDATE_REVERTED": 2,
+      "MODEL_STOPPED": 2,
+      "PATCH_POLICY_REJECTED": 1,
+      "PATCH_REJECTED": 1,
+      "REGRESSION_FAILED": 1,
+      "SEARCH_TOOL_ERROR": 3,
+      "TARGET_TEST_FAILED": 1
+    }
+  },
+  "mode_metrics": [
+    {
+      "execution_mode": "full-agent",
+      "assigned_attempts": 6,
+      "completed_attempts": 6,
+      "provider_accepted_attempts": 6,
+      "model_executed_attempts": 6,
+      "model_tool_call_attempts": 6,
+      "resolved_attempts": 6,
+      "target_pass_count": 6,
+      "regression_pass_count": 6,
+      "target_only_false_repairs": 0,
+      "model_turns": 55,
+      "model_requests": 55,
+      "generated_tool_calls": 62,
+      "executed_tool_calls": 55,
+      "discarded_tool_calls": 7,
+      "tool_calls_by_name": {
+        "apply_patch": 9,
+        "list_files": 1,
+        "read_file": 29,
+        "search_code": 16
+      },
+      "patch_attempts": 9,
+      "rejected_patch_attempts": 1,
+      "normalization_used_runs": 6,
+      "recount_used_runs": 1,
+      "input_tokens": 379508,
+      "output_tokens": 27836,
+      "reasoning_tokens": 20104,
+      "model_latency_seconds": 752.656878699956,
+      "test_duration_seconds": 945.1880000000237,
+      "wall_clock_duration_seconds": 1745.7220000000088,
+      "terminal_status_distribution": {
+        "RESOLVED": 6
+      },
+      "primary_failure_distribution": {},
+      "observed_failure_occurrence_counts": {
+        "CANDIDATE_REVERTED": 1,
+        "PATCH_POLICY_REJECTED": 1,
+        "PATCH_REJECTED": 1,
+        "SEARCH_TOOL_ERROR": 1,
+        "TARGET_TEST_FAILED": 1
+      }
+    },
+    {
+      "execution_mode": "single-candidate-no-feedback",
+      "assigned_attempts": 6,
+      "completed_attempts": 6,
+      "provider_accepted_attempts": 6,
+      "model_executed_attempts": 6,
+      "model_tool_call_attempts": 6,
+      "resolved_attempts": 3,
+      "target_pass_count": 4,
+      "regression_pass_count": 3,
+      "target_only_false_repairs": 1,
+      "model_turns": 45,
+      "model_requests": 45,
+      "generated_tool_calls": 51,
+      "executed_tool_calls": 43,
+      "discarded_tool_calls": 8,
+      "tool_calls_by_name": {
+        "apply_patch": 4,
+        "list_files": 2,
+        "read_file": 25,
+        "search_code": 12
+      },
+      "patch_attempts": 4,
+      "rejected_patch_attempts": 0,
+      "normalization_used_runs": 3,
+      "recount_used_runs": 1,
+      "input_tokens": 270533,
+      "output_tokens": 18539,
+      "reasoning_tokens": 11394,
+      "model_latency_seconds": 507.1174364000908,
+      "test_duration_seconds": 903.5169999999925,
+      "wall_clock_duration_seconds": 1455.0620000000345,
+      "terminal_status_distribution": {
+        "RESOLVED": 3,
+        "MODEL_STOPPED": 2,
+        "REGRESSION_FAILED": 1
+      },
+      "primary_failure_distribution": {
+        "NO_PATCH_ACCEPTED": 2,
+        "REGRESSION_UNRESOLVED": 1
+      },
+      "observed_failure_occurrence_counts": {
+        "CANDIDATE_REVERTED": 1,
+        "MODEL_STOPPED": 2,
+        "REGRESSION_FAILED": 1,
+        "SEARCH_TOOL_ERROR": 2
+      }
+    }
+  ],
+  "per_case": [
+    {
+      "case_id": "commons-lang-mid-overflow",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "REGRESSION_FAILED",
+        "primary_failure": "REGRESSION_UNRESOLVED",
+        "observed_failures": [
+          "REGRESSION_FAILED",
+          "CANDIDATE_REVERTED"
+        ],
+        "target": "PASS",
+        "regression": "FAIL"
+      }
+    },
+    {
+      "case_id": "commons-collections-int-value",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      }
+    },
+    {
+      "case_id": "commons-codec-zero-big-integer",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      }
+    },
+    {
+      "case_id": "commons-io-bounded-reader-skip",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "MODEL_STOPPED",
+        "primary_failure": "NO_PATCH_ACCEPTED",
+        "observed_failures": [
+          "MODEL_STOPPED"
+        ],
+        "target": "NOT_RUN",
+        "regression": "NOT_RUN"
+      }
+    },
+    {
+      "case_id": "commons-csv-supplementary-delimiter",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS"
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "MODEL_STOPPED",
+        "primary_failure": "NO_PATCH_ACCEPTED",
+        "observed_failures": [
+          "SEARCH_TOOL_ERROR",
+          "MODEL_STOPPED"
+        ],
+        "target": "NOT_RUN",
+        "regression": "NOT_RUN"
+      }
+    },
+    {
+      "case_id": "commons-beanutils-nondouble-number",
+      "full_agent": {
+        "terminal_status": "RESOLVED",
+        "observed_failures": [
+          "TARGET_TEST_FAILED",
+          "CANDIDATE_REVERTED",
+          "PATCH_REJECTED",
+          "PATCH_POLICY_REJECTED"
+        ],
+        "target": "PASS",
+        "regression": "PASS",
+        "patch_attempts": 4
+      },
+      "single_candidate_no_feedback": {
+        "terminal_status": "RESOLVED",
+        "target": "PASS",
+        "regression": "PASS",
+        "patch_attempts": 1
+      }
+    }
+  ],
+  "feedback_evidence": {
+    "patch_rejection_feedback": [
+      "commons-beanutils-nondouble-number: full-agent received a structured policy rejection and requested another Patch"
+    ],
+    "target_test_feedback": [
+      "commons-beanutils-nondouble-number: full-agent received two target failures and continued"
+    ],
+    "regression_feedback": [],
+    "rollback": [
+      "commons-beanutils-nondouble-number: full-agent reverted two failed target candidates",
+      "commons-lang-mid-overflow: no-feedback candidate was reverted after regression failure, with no subsequent model request"
+    ],
+    "replan": [
+      "commons-beanutils-nondouble-number: full-agent recorded two TARGET_TEST_FAILED, two CANDIDATE_REVERTED, and one PATCH_REJECTED replan reasons"
+    ],
+    "causal_claim": false
+  },
+  "integrity": {
+    "reports_validated": 12,
+    "traces_validated": 12,
+    "trajectories_validated": 12,
+    "artifact_hashes_validated": 12,
+    "project_commit_matches": 12,
+    "dirty_false": 12,
+    "baseline_reproduced": 12,
+    "original_repository_unchanged": 12,
+    "temporary_worktrees_removed": 12,
+    "api_key_matches": 0,
+    "authorization_header_matches": 0,
+    "hidden_solution_matches": 0,
+    "raw_patch_body_matches": 0,
+    "framework_defects_detected": 0
+  },
+  "limitations": [
+    "One run per Case and mode is a small controlled engineering ablation.",
+    "The comparison does not establish causal or statistical certainty.",
+    "No full-agent run consumed regression-failure feedback in this sample.",
+    "The verifier, not model text, determined every RESOLVED result."
+  ]
 }

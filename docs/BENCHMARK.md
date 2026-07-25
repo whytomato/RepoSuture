@@ -170,7 +170,7 @@ assign additional stability repetitions only to selected Cases:
 
 ```powershell
 reposuture benchmark-matrix benchmarks/real_world/suites/maven-real-world-v2.yaml `
-  --artifacts-dir .artifacts-live-r04-real `
+  --artifacts-dir .artifacts-live-r04-final-repair `
   --provider openai `
   --model z-ai/glm-5.2 `
   --model deepseek/deepseek-v4-pro `
@@ -210,11 +210,14 @@ When no `--model` is supplied, RepoSuture reads `REPOSUTURE_MODEL` and
 when used. The new variables always win when both names are present. Exact model ids are
 written to the plan and reports.
 
-Release 0.4's first live V2 sequence was stopped after 15 assigned attempts because an
-accepted model Patch that did not compile was incorrectly classified as infrastructure.
-That generic defect is fixed, but the pre-fix observations are invalidated and the
-40-attempt cumulative cap did not permit a complete restart. Consequently no Release 0.4
-GLM-versus-DeepSeek rate or Wilson interval is published. The sanitized audit is
+Release 0.4 ultimately executed this protocol from clean commit
+`e3cafd30edec3802c6bf88177e9c6a702e9c7e03`: 28/28 assigned repair attempts completed
+with no replacements. GLM resolved 12/14 and DeepSeek resolved 11/14; every attempt was
+Provider-accepted, model-executed, and observed at least one valid model-requested tool
+action. The original three Cases have three observations per model, while the five
+additions have one breadth observation per model. The result is descriptive, is not
+pass@k, and does not establish universal Java repair capability. The canonical sanitized
+report is
 [`results/reposuture-real-v2-glm-deepseek.md`](results/reposuture-real-v2-glm-deepseek.md).
 
 ## Real-world suite
@@ -403,20 +406,30 @@ second Patch can be submitted.
 
 ```powershell
 reposuture benchmark-ablation `
-  benchmarks/real_world/suites/maven-real-world-v2-feedback-ablation.yaml `
-  --artifacts-dir .artifacts-live-r04-ablation `
+  benchmarks/real_world/suites/maven-real-world-v2.yaml `
+  --artifacts-dir .artifacts-live-r04-final-ablation `
   --provider openai `
   --model deepseek/deepseek-v4-pro `
   --mode full-agent `
   --mode single-candidate-no-feedback `
+  --case commons-lang-mid-overflow `
+  --case commons-collections-int-value `
+  --case commons-codec-zero-big-integer `
+  --case commons-io-bounded-reader-skip `
+  --case commons-csv-supplementary-delimiter `
+  --case commons-beanutils-nondouble-number `
   --schedule interleaved --dry-run
 ```
 
 The Release 0.4 locked subset is documented in
 [`REAL_WORLD_BENCHMARK.md`](REAL_WORLD_BENCHMARK.md). Resume identity includes execution
 mode, so a full-Agent observation can never satisfy a no-feedback schedule item.
-The live ablation was not started after the repair dataset was invalidated; its locked plan
-and N/A metrics are recorded in
+The final live ablation completed 12/12 assigned attempts with no replacements:
+full-agent resolved 6/6 and single-candidate-no-feedback resolved 3/6, including one
+target-only false repair. Full-agent recovered from target-test and Patch-policy feedback
+on the BeanUtils Case; no full-agent attempt consumed regression-failure feedback in this
+sample. One observation per Case/mode is controlled engineering evidence, not a causal or
+statistically conclusive estimate. The canonical evidence is
 [`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md).
 
 ## Exit codes
