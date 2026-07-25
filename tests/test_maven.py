@@ -57,9 +57,11 @@ class AssertCrlfWrapperNormalizedRunner(ProcessRunner):
     ) -> ProcessResult:
         del timeout_seconds, input_bytes
         launcher = Path(command[0])
-        assert launcher.parent == cwd
-        assert launcher.name.startswith(".reposuture-mvnw-")
+        assert launcher.parent.parent == cwd
+        assert launcher.parent.name.startswith(".reposuture-maven-wrapper-")
+        assert launcher.name == "mvnw"
         assert launcher.read_bytes() == b"#!/bin/sh\nexit 1\n"
+        assert (launcher.parent / ".mvn").resolve() == (cwd / ".mvn").resolve()
         assert list(command[1:]) == [
             "-q",
             "-Dtest=com.example.ExampleTest#rejectsNull",
@@ -91,14 +93,14 @@ class AssertCrlfWrapperNormalizedRunner(ProcessRunner):
         )
 
 
+@pytest.mark.skipif(os.name == "nt", reason="requires a POSIX directory symlink")
 def test_run_target_uses_temporary_lf_launcher_for_crlf_wrapper(
     tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(maven_module, "WINDOWS", False)
     wrapper = tmp_path / "mvnw"
     original = b"#!/bin/sh\r\nexit 1\r\n"
     wrapper.write_bytes(original)
+    (tmp_path / ".mvn").mkdir()
     target = TargetTest(class_name="com.example.ExampleTest", method_name="rejectsNull")
 
     execution = MavenRunner(AssertCrlfWrapperNormalizedRunner()).run_target(
@@ -109,7 +111,7 @@ def test_run_target_uses_temporary_lf_launcher_for_crlf_wrapper(
 
     assert execution.outcome is TestOutcome.FAIL
     assert wrapper.read_bytes() == original
-    assert list(tmp_path.glob(".reposuture-mvnw-*")) == []
+    assert list(tmp_path.glob(".reposuture-maven-wrapper-*")) == []
 
 
 @pytest.mark.skipif(os.name == "nt", reason="requires a POSIX executable script")
@@ -117,6 +119,8 @@ def test_run_target_executes_crlf_wrapper_on_posix(tmp_path: Path) -> None:
     wrapper = tmp_path / "mvnw"
     wrapper.write_bytes(
         """#!/bin/sh
+test "$(basename "$0")" = "mvnw" || exit 99
+test -d "$(dirname "$0")/.mvn" || exit 98
 mkdir -p target/surefire-reports
 cat > target/surefire-reports/TEST-com.example.ExampleTest.xml <<'EOF'
 <testsuite tests="1" failures="1" errors="0" skipped="0">
@@ -129,6 +133,7 @@ exit 1
 """.replace("\n", "\r\n").encode()
     )
     wrapper.chmod(0o755)
+    (tmp_path / ".mvn").mkdir()
     target = TargetTest(class_name="com.example.ExampleTest", method_name="rejectsNull")
 
     execution = MavenRunner(ProcessRunner()).run_target(
@@ -139,7 +144,7 @@ exit 1
 
     assert execution.outcome is TestOutcome.FAIL
     assert execution.test_observed is True
-    assert list(tmp_path.glob(".reposuture-mvnw-*")) == []
+    assert list(tmp_path.glob(".reposuture-maven-wrapper-*")) == []
 
 
 def test_scoped_regression_command_is_structured(tmp_path: Path) -> None:

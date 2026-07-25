@@ -8,7 +8,9 @@ on:
     paths:
       - ".github/workflows/real-world-validation.yml"
       - "benchmarks/real_world/**"
+      - "src/reposuture/maven.py"
       - "src/reposuture/real_world.py"
+      - "tests/test_maven.py"
       - "tests/test_real_world.py"
 
 permissions:

@@ -303,23 +303,48 @@ class MavenRunner:
         if b"\x00" in raw_wrapper:
             raise MavenInfrastructureError("Maven Wrapper contains a NUL byte")
 
-        descriptor = -1
+        launcher_root: Path | None = None
         launcher: Path | None = None
         try:
-            descriptor, launcher_name = tempfile.mkstemp(
-                prefix=".reposuture-mvnw-",
-                suffix=".sh",
-                dir=worktree,
+            launcher_root = Path(
+                tempfile.mkdtemp(
+                    prefix=".reposuture-maven-wrapper-",
+                    dir=worktree,
+                )
             )
-            launcher = Path(launcher_name)
-            safe_launcher = safe_worktree_path(worktree, launcher.name)
+            safe_root = safe_worktree_path(worktree, launcher_root.name)
+            if launcher_root.resolve(strict=True) != safe_root:
+                raise MavenInfrastructureError(
+                    "temporary Maven Wrapper directory escaped the worktree"
+                )
+            source_maven_config = safe_worktree_path(worktree, ".mvn")
+            if not source_maven_config.is_dir():
+                raise MavenInfrastructureError(
+                    "Maven Wrapper configuration directory is unavailable"
+                )
+            linked_maven_config = launcher_root / ".mvn"
+            linked_maven_config.symlink_to(
+                source_maven_config,
+                target_is_directory=True,
+            )
+            safe_link = safe_worktree_path(
+                worktree,
+                Path(launcher_root.name) / ".mvn",
+            )
+            if safe_link != source_maven_config:
+                raise MavenInfrastructureError(
+                    "temporary Maven Wrapper configuration link is unsafe"
+                )
+            launcher = launcher_root / "mvnw"
+            launcher.write_bytes(normalized_wrapper)
+            safe_launcher = safe_worktree_path(
+                worktree,
+                Path(launcher_root.name) / "mvnw",
+            )
             if launcher.resolve(strict=True) != safe_launcher:
                 raise MavenInfrastructureError(
                     "temporary Maven Wrapper launcher escaped the worktree"
                 )
-            with os.fdopen(descriptor, "wb") as stream:
-                descriptor = -1
-                stream.write(normalized_wrapper)
             launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
             yield [str(launcher), *arguments]
         except OSError as exc:
@@ -327,14 +352,17 @@ class MavenRunner:
                 f"unable to prepare compatible Maven Wrapper launcher: {exc}"
             ) from exc
         finally:
-            if descriptor >= 0:
-                os.close(descriptor)
-            if launcher is not None:
+            if launcher_root is not None:
                 try:
-                    launcher.unlink(missing_ok=True)
+                    safe_root = safe_worktree_path(worktree, launcher_root.name)
+                    if launcher_root.resolve(strict=True) != safe_root:
+                        raise MavenInfrastructureError(
+                            "temporary Maven Wrapper cleanup path is unsafe"
+                        )
+                    shutil.rmtree(launcher_root)
                 except OSError as exc:
                     raise MavenInfrastructureError(
-                        f"unable to remove temporary Maven Wrapper launcher: {exc}"
+                        f"unable to remove temporary Maven Wrapper directory: {exc}"
                     ) from exc
 
     @staticmethod
