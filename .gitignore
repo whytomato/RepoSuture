@@ -7,6 +7,7 @@ dist/
 .pytest_cache/
 .ruff_cache/
 .artifacts*
+ci-artifacts/
 patchpilot-worktrees/
 patchpilot-*/
 benchmarks/real_world/.cache/

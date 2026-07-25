@@ -2,6 +2,14 @@ name: Real-world benchmark validation
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/real-world-validation.yml"
+      - "benchmarks/real_world/**"
+      - "src/reposuture/real_world.py"
+      - "tests/test_real_world.py"
 
 permissions:
   contents: read
@@ -33,19 +41,30 @@ jobs:
       - name: Install RepoSuture
         run: python -m pip install -e ".[dev]"
 
+      - name: Prepare diagnostic directory
+        shell: bash
+        run: mkdir -p ci-artifacts/real-world-validation/results
+
       - name: Bootstrap locked upstream fixtures
-        run: python benchmarks/real_world/bootstrap_real_world.py
+        shell: bash
+        run: |
+          set -o pipefail
+          python benchmarks/real_world/bootstrap_real_world.py 2>&1 |
+            tee ci-artifacts/real-world-validation/bootstrap.log
 
       - name: Validate all eight V2 Cases with real Maven and JUnit
-        run: >-
-          reposuture validate-benchmark
-          benchmarks/real_world/suites/maven-real-world-v2.yaml
-          --artifacts-dir .artifacts-real-world-validation
+        shell: bash
+        run: |
+          set -o pipefail
+          reposuture validate-benchmark \
+            benchmarks/real_world/suites/maven-real-world-v2.yaml \
+            --artifacts-dir ci-artifacts/real-world-validation/results 2>&1 |
+            tee ci-artifacts/real-world-validation/validation.log
 
       - name: Upload deterministic reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: real-world-validation
-          path: .artifacts-real-world-validation
-          if-no-files-found: error
+          path: ci-artifacts/real-world-validation
+          if-no-files-found: warn

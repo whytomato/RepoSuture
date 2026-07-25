@@ -6,6 +6,7 @@ import hashlib
 import os
 import re
 import shutil
+import stat
 import time
 import uuid
 from datetime import UTC, date, datetime
@@ -496,7 +497,67 @@ def _install_pinned_maven_wrapper(real_world_root: Path, fixture: Path) -> None:
                 "upstream repository already contains a Maven Wrapper path"
             )
         destination.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copyfile(resolved_source, destination)
+        if destination.name == "mvnw.cmd":
+            shutil.copyfile(resolved_source, destination)
+        else:
+            content = resolved_source.read_bytes()
+            destination.write_bytes(
+                content.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+            )
+    launcher = fixture / "mvnw"
+    launcher.chmod(
+        launcher.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH
+    )
+
+
+def _apply_legacy_wrapper_line_endings(fixture: Path) -> None:
+    """Reproduce pre-normalization wrapper blobs when an existing lock requires them."""
+
+    for relative_path in (
+        Path("mvnw"),
+        Path(".mvn") / "wrapper" / "maven-wrapper.properties",
+    ):
+        path = fixture / relative_path
+        content = path.read_bytes().replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        path.write_bytes(content.replace(b"\n", b"\r\n"))
+
+
+def _commit_fixture(
+    runner: ProcessRunner,
+    fixture: Path,
+    case: RealWorldSourceCase,
+    *,
+    amend: bool = False,
+) -> str:
+    prior_author = os.environ.get("GIT_AUTHOR_DATE")
+    prior_committer = os.environ.get("GIT_COMMITTER_DATE")
+    try:
+        timestamp = case.deterministic_timestamp.isoformat()
+        os.environ["GIT_AUTHOR_DATE"] = timestamp
+        os.environ["GIT_COMMITTER_DATE"] = timestamp
+        arguments = [
+            "-c",
+            "commit.gpgsign=false",
+            "commit",
+            "--quiet",
+            "--no-verify",
+        ]
+        if amend:
+            arguments.append("--amend")
+        arguments.extend(
+            ["-m", f"benchmark: reproducible {case.case_id} bug"]
+        )
+        _git(runner, fixture, *arguments)
+    finally:
+        if prior_author is None:
+            os.environ.pop("GIT_AUTHOR_DATE", None)
+        else:
+            os.environ["GIT_AUTHOR_DATE"] = prior_author
+        if prior_committer is None:
+            os.environ.pop("GIT_COMMITTER_DATE", None)
+        else:
+            os.environ["GIT_COMMITTER_DATE"] = prior_committer
+    return _git(runner, fixture, "rev-parse", "HEAD").strip()
 
 
 def _build_fixture(
@@ -505,6 +566,7 @@ def _build_fixture(
     source_cache: Path,
     fixtures_root: Path,
     case: RealWorldSourceCase,
+    expected_commit: str | None,
 ) -> str:
     source = _ensure_source_clone(runner, source_cache, case)
     source_head_before = _git(runner, source, "rev-parse", "HEAD").strip()
@@ -610,33 +672,23 @@ def _build_fixture(
         )
         _apply_executable_modes(runner, source, temporary, case.buggy_commit)
         _git(runner, temporary, "update-index", "--chmod=+x", "--", "mvnw")
-        prior_author = os.environ.get("GIT_AUTHOR_DATE")
-        prior_committer = os.environ.get("GIT_COMMITTER_DATE")
-        try:
-            timestamp = case.deterministic_timestamp.isoformat()
-            os.environ["GIT_AUTHOR_DATE"] = timestamp
-            os.environ["GIT_COMMITTER_DATE"] = timestamp
+        commit = _commit_fixture(runner, temporary, case)
+        if expected_commit is not None and commit != expected_commit:
+            _apply_legacy_wrapper_line_endings(temporary)
             _git(
                 runner,
                 temporary,
-                "-c",
-                "commit.gpgsign=false",
-                "commit",
-                "--quiet",
-                "--no-verify",
-                "-m",
-                f"benchmark: reproducible {case.case_id} bug",
+                "add",
+                "--force",
+                "--",
+                ".mvn/wrapper/maven-wrapper.properties",
+                "mvnw",
             )
-        finally:
-            if prior_author is None:
-                os.environ.pop("GIT_AUTHOR_DATE", None)
-            else:
-                os.environ["GIT_AUTHOR_DATE"] = prior_author
-            if prior_committer is None:
-                os.environ.pop("GIT_COMMITTER_DATE", None)
-            else:
-                os.environ["GIT_COMMITTER_DATE"] = prior_committer
-        commit = _git(runner, temporary, "rev-parse", "HEAD").strip()
+            commit = _commit_fixture(runner, temporary, case, amend=True)
+        if expected_commit is not None and commit != expected_commit:
+            raise RealWorldBenchmarkError(
+                f"generated fixture commit mismatch for {case.case_id}"
+            )
         upstream_production_tree = _git(
             runner,
             source,
@@ -779,6 +831,7 @@ def bootstrap_real_world(
                 source_cache,
                 fixtures_root,
                 case,
+                expected.benchmark_base_commit if expected is not None else None,
             )
         entries.append(
             RealWorldLockEntry(

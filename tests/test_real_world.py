@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -14,8 +16,10 @@ from reposuture.process import ProcessRunner
 from reposuture.real_world import (
     RealWorldBenchmarkError,
     RealWorldSourcesManifest,
+    _apply_legacy_wrapper_line_endings,
     _contained_child,
     _git,
+    _install_pinned_maven_wrapper,
     bootstrap_real_world,
     load_real_world_lock,
     load_real_world_sources,
@@ -154,6 +158,56 @@ def test_source_lock_contains_no_api_secret_shape() -> None:
     assert "Authorization" not in serialized
     assert "OPENAI_API_KEY" not in serialized
     assert "sk-or-" not in serialized
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX executable modes are not observable")
+def test_pinned_maven_wrapper_is_executable_on_posix(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+
+    _install_pinned_maven_wrapper(ROOT, fixture)
+
+    launcher_mode = stat.S_IMODE((fixture / "mvnw").stat().st_mode)
+    assert launcher_mode & 0o111 == 0o111
+
+
+def test_pinned_maven_wrapper_normalizes_portable_text_bytes(tmp_path: Path) -> None:
+    fixture = tmp_path / "fixture"
+    fixture.mkdir()
+
+    _install_pinned_maven_wrapper(ROOT, fixture)
+
+    normalized_paths = (
+        fixture / "mvnw",
+        fixture / ".mvn" / "wrapper" / "maven-wrapper.properties",
+    )
+    assert all(b"\r" not in path.read_bytes() for path in normalized_paths)
+
+    _apply_legacy_wrapper_line_endings(fixture)
+
+    assert all(b"\r\n" in path.read_bytes() for path in normalized_paths)
+    assert all(
+        path.read_bytes().replace(b"\r\n", b"").count(b"\r") == 0
+        for path in normalized_paths
+    )
+
+
+def test_real_world_validation_workflow_preserves_bootstrap_diagnostics() -> None:
+    workflow = (
+        PROJECT_ROOT / ".github" / "workflows" / "real-world-validation.yml"
+    ).read_text(encoding="utf-8")
+
+    assert "mkdir -p ci-artifacts/real-world-validation/results" in workflow
+    assert "set -o pipefail" in workflow
+    assert "tee ci-artifacts/real-world-validation/bootstrap.log" in workflow
+    assert "tee ci-artifacts/real-world-validation/validation.log" in workflow
+    assert (
+        "--artifacts-dir ci-artifacts/real-world-validation/results"
+        in workflow
+    )
+    assert "path: ci-artifacts/real-world-validation" in workflow
+    assert "if-no-files-found: warn" in workflow
+    assert ".artifacts-real-world-validation" not in workflow
 
 
 @pytest.mark.network
