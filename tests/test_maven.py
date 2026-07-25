@@ -46,6 +46,102 @@ def test_target_command_is_structured_and_prefers_wrapper(tmp_path: Path) -> Non
     ]
 
 
+class AssertCrlfWrapperNormalizedRunner(ProcessRunner):
+    def run(
+        self,
+        command: list[str] | tuple[str, ...],
+        *,
+        cwd: Path,
+        timeout_seconds: float,
+        input_bytes: bytes | None = None,
+    ) -> ProcessResult:
+        del timeout_seconds, input_bytes
+        launcher = Path(command[0])
+        assert launcher.parent == cwd
+        assert launcher.name.startswith(".reposuture-mvnw-")
+        assert launcher.read_bytes() == b"#!/bin/sh\nexit 1\n"
+        assert list(command[1:]) == [
+            "-q",
+            "-Dtest=com.example.ExampleTest#rejectsNull",
+            "test",
+        ]
+        reports = cwd / "target/surefire-reports"
+        reports.mkdir(parents=True)
+        (reports / "TEST-com.example.ExampleTest.xml").write_text(
+            """<testsuite tests="1" failures="1" errors="0" skipped="0">
+  <testcase name="rejectsNull" classname="com.example.ExampleTest">
+    <failure message="expected failure"/>
+  </testcase>
+</testsuite>
+""",
+            encoding="utf-8",
+        )
+        return ProcessResult(
+            command=tuple(command),
+            cwd=cwd,
+            exit_code=1,
+            duration_seconds=0.01,
+            stdout="",
+            stderr="",
+            timed_out=False,
+            stdout_truncated=False,
+            stderr_truncated=False,
+            stdout_bytes_seen=0,
+            stderr_bytes_seen=0,
+        )
+
+
+def test_run_target_uses_temporary_lf_launcher_for_crlf_wrapper(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(maven_module, "WINDOWS", False)
+    wrapper = tmp_path / "mvnw"
+    original = b"#!/bin/sh\r\nexit 1\r\n"
+    wrapper.write_bytes(original)
+    target = TargetTest(class_name="com.example.ExampleTest", method_name="rejectsNull")
+
+    execution = MavenRunner(AssertCrlfWrapperNormalizedRunner()).run_target(
+        tmp_path,
+        target,
+        timeout_seconds=5,
+    )
+
+    assert execution.outcome is TestOutcome.FAIL
+    assert wrapper.read_bytes() == original
+    assert list(tmp_path.glob(".reposuture-mvnw-*")) == []
+
+
+@pytest.mark.skipif(os.name == "nt", reason="requires a POSIX executable script")
+def test_run_target_executes_crlf_wrapper_on_posix(tmp_path: Path) -> None:
+    wrapper = tmp_path / "mvnw"
+    wrapper.write_bytes(
+        """#!/bin/sh
+mkdir -p target/surefire-reports
+cat > target/surefire-reports/TEST-com.example.ExampleTest.xml <<'EOF'
+<testsuite tests="1" failures="1" errors="0" skipped="0">
+  <testcase name="rejectsNull" classname="com.example.ExampleTest">
+    <failure message="expected failure"/>
+  </testcase>
+</testsuite>
+EOF
+exit 1
+""".replace("\n", "\r\n").encode()
+    )
+    wrapper.chmod(0o755)
+    target = TargetTest(class_name="com.example.ExampleTest", method_name="rejectsNull")
+
+    execution = MavenRunner(ProcessRunner()).run_target(
+        tmp_path,
+        target,
+        timeout_seconds=5,
+    )
+
+    assert execution.outcome is TestOutcome.FAIL
+    assert execution.test_observed is True
+    assert list(tmp_path.glob(".reposuture-mvnw-*")) == []
+
+
 def test_scoped_regression_command_is_structured(tmp_path: Path) -> None:
     tests = (
         TargetTest(class_name="com.example.ExampleTest", method_name="acceptsValid"),

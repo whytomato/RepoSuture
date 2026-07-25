@@ -5,7 +5,11 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import stat
+import tempfile
 import xml.etree.ElementTree as ElementTree
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -21,6 +25,7 @@ MAX_SUREFIRE_REPORT_BYTES = 16 * 1024 * 1024
 # Commons Lang evidence is 313 files / 14.97 MiB total / 5.94 MiB maximum.
 MAX_SUREFIRE_TOTAL_BYTES = 64 * 1024 * 1024
 MAX_SUREFIRE_REPORT_FILES = 1_000
+WINDOWS = os.name == "nt"
 
 
 class MavenInfrastructureError(RuntimeError):
@@ -111,11 +116,15 @@ class MavenRunner:
         candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         self._clear_surefire_reports(worktree)
-        process = self.runner.run(
-            self.target_command(worktree, target),
-            cwd=worktree,
-            timeout_seconds=timeout_seconds,
-        )
+        with self._execution_command(
+            worktree,
+            ["-q", f"-Dtest={target.maven_selector}", "test"],
+        ) as command:
+            process = self.runner.run(
+                command,
+                cwd=worktree,
+                timeout_seconds=timeout_seconds,
+            )
         return self.interpret_target_process(
             process,
             worktree,
@@ -132,11 +141,17 @@ class MavenRunner:
         candidate_patch_applied: bool = False,
     ) -> MavenExecution:
         self._clear_surefire_reports(worktree)
-        process = self.runner.run(
-            self.regression_command(worktree, regression_tests),
-            cwd=worktree,
-            timeout_seconds=timeout_seconds,
-        )
+        arguments = ["-q"]
+        if regression_tests is not None:
+            selectors = ",".join(test.maven_selector for test in regression_tests)
+            arguments.append(f"-Dtest={selectors}")
+        arguments.append("test")
+        with self._execution_command(worktree, arguments) as command:
+            process = self.runner.run(
+                command,
+                cwd=worktree,
+                timeout_seconds=timeout_seconds,
+            )
         return self.interpret_regression_process(
             process,
             worktree,
@@ -251,7 +266,7 @@ class MavenRunner:
         )
 
     def _maven_executable(self, worktree: Path) -> str:
-        wrapper_name = "mvnw.cmd" if os.name == "nt" else "mvnw"
+        wrapper_name = "mvnw.cmd" if WINDOWS else "mvnw"
         wrapper_candidate = worktree / wrapper_name
         if wrapper_candidate.exists() or wrapper_candidate.is_symlink():
             try:
@@ -262,6 +277,65 @@ class MavenRunner:
                 raise MavenInfrastructureError(f"Maven Wrapper is not a file: {wrapper}")
             return str(wrapper)
         return "mvn"
+
+    @contextmanager
+    def _execution_command(
+        self,
+        worktree: Path,
+        arguments: Sequence[str],
+    ) -> Iterator[list[str]]:
+        executable = self._maven_executable(worktree)
+        if WINDOWS or executable == "mvn":
+            yield [executable, *arguments]
+            return
+
+        wrapper = Path(executable)
+        try:
+            raw_wrapper = wrapper.read_bytes()
+        except OSError as exc:
+            raise MavenInfrastructureError(
+                f"unable to read Maven Wrapper: {wrapper}: {exc}"
+            ) from exc
+        normalized_wrapper = raw_wrapper.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+        if normalized_wrapper == raw_wrapper:
+            yield [executable, *arguments]
+            return
+        if b"\x00" in raw_wrapper:
+            raise MavenInfrastructureError("Maven Wrapper contains a NUL byte")
+
+        descriptor = -1
+        launcher: Path | None = None
+        try:
+            descriptor, launcher_name = tempfile.mkstemp(
+                prefix=".reposuture-mvnw-",
+                suffix=".sh",
+                dir=worktree,
+            )
+            launcher = Path(launcher_name)
+            safe_launcher = safe_worktree_path(worktree, launcher.name)
+            if launcher.resolve(strict=True) != safe_launcher:
+                raise MavenInfrastructureError(
+                    "temporary Maven Wrapper launcher escaped the worktree"
+                )
+            with os.fdopen(descriptor, "wb") as stream:
+                descriptor = -1
+                stream.write(normalized_wrapper)
+            launcher.chmod(launcher.stat().st_mode | stat.S_IXUSR)
+            yield [str(launcher), *arguments]
+        except OSError as exc:
+            raise MavenInfrastructureError(
+                f"unable to prepare compatible Maven Wrapper launcher: {exc}"
+            ) from exc
+        finally:
+            if descriptor >= 0:
+                os.close(descriptor)
+            if launcher is not None:
+                try:
+                    launcher.unlink(missing_ok=True)
+                except OSError as exc:
+                    raise MavenInfrastructureError(
+                        f"unable to remove temporary Maven Wrapper launcher: {exc}"
+                    ) from exc
 
     @staticmethod
     def _terminal_process_outcome(process: ProcessResult) -> MavenExecution | None:
