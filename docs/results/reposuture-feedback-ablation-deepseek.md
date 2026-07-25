@@ -1,59 +1,50 @@
-# RepoSuture DeepSeek feedback-loop ablation
+# RepoSuture DeepSeek 测试反馈消融
 
-This is the canonical RepoSuture 0.4 feedback-loop ablation result. It is
-a controlled engineering comparison, not a causal or statistically
-conclusive estimate.
+这是 RepoSuture 0.4 的最终反馈循环消融结果。它是一组受控工程对比，不构成统计或因果结论。
 
-## Result
+## 实验信息
 
-- Evaluation window (UTC): `2026-07-25T13:22:39.963223Z` to
-  `2026-07-25T14:16:01.817650Z`
-- Experiment commit:
-  `e3cafd30edec3802c6bf88177e9c6a702e9c7e03`
-- Source tree: `dirty=false`
-- Provider: OpenRouter-compatible Responses API
-- Model: `deepseek/deepseek-v4-pro`
-- Suite: `maven-real-world-v2`
-- Benchmark fingerprint:
-  `65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`
-- Schedule: deterministic, sequential, interleaved
-- Dry-run plan SHA-256:
-  `6f7f9181cd50fc622e373b3c4585bc0ae8e78da353de563af05ed1a58f52616c`
-- Assigned/completed attempts: `12 / 12`
-- Replacement attempts: `0`
-- Framework defects detected: `0`
+- UTC 时间：`2026-07-25T13:22:39.963223Z` 至 `2026-07-25T14:16:01.817650Z`
+- 评估 Commit：`e3cafd30edec3802c6bf88177e9c6a702e9c7e03`
+- 源码树：`dirty=false`
+- Provider：OpenRouter-compatible Responses API
+- 模型：`deepseek/deepseek-v4-pro`
+- Suite：`maven-real-world-v2`
+- 基准指纹：`65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`
+- 调度：确定性、顺序、交错
+- Dry-run Plan SHA-256：`6f7f9181cd50fc622e373b3c4585bc0ae8e78da353de563af05ed1a58f52616c`
+- 分配 / 完成：`12 / 12`
+- 替换尝试：`0`
+- 发现 Framework Defect：`0`
 
-## Mode comparison
+## 模式对比
 
-| Metric | Full Agent | Single candidate, no feedback |
+| 指标 | `full-agent` | `single-candidate-no-feedback` |
 |---|---:|---:|
-| Assigned / completed | 6 / 6 | 6 / 6 |
-| Provider accepted | 6 | 6 |
-| Model executed | 6 | 6 |
-| Model requested a valid tool | 6 | 6 |
-| Resolved | 6 | 3 |
-| Target PASS | 6 | 4 |
-| Regression PASS | 6 | 3 |
-| Target-only false repairs | 0 | 1 |
-| Model turns / requests | 55 / 55 | 45 / 45 |
-| Generated / executed / discarded tool calls | 62 / 55 / 7 | 51 / 43 / 8 |
-| Patch attempts / rejected | 9 / 1 | 4 / 0 |
-| Input / output / reasoning tokens | 379,508 / 27,836 / 20,104 | 270,533 / 18,539 / 11,394 |
-| Model latency | 752.657 s | 507.117 s |
-| Test duration | 945.188 s | 903.517 s |
-| Wall-clock duration | 1,745.722 s | 1,455.062 s |
+| 分配 / 完成 | 6 / 6 | 6 / 6 |
+| Provider 接受 | 6 | 6 |
+| 模型执行 | 6 | 6 |
+| 模型请求有效工具 | 6 | 6 |
+| `RESOLVED` | 6 | 3 |
+| 目标测试 PASS | 6 | 4 |
+| 回归 PASS | 6 | 3 |
+| 只通过目标的 False Repair | 0 | 1 |
+| 模型 Turns / Requests | 55 / 55 | 45 / 45 |
+| Tool Calls 生成 / 执行 / 丢弃 | 62 / 55 / 7 | 51 / 43 / 8 |
+| Patch 尝试 / 拒绝 | 9 / 1 | 4 / 0 |
+| Input / Output / Reasoning Tokens | 379,508 / 27,836 / 20,104 | 270,533 / 18,539 / 11,394 |
+| 模型延迟 | 752.657s | 507.117s |
+| 测试耗时 | 945.188s | 903.517s |
+| 墙钟耗时 | 1,745.722s | 1,455.062s |
 
-Both modes used the same commit, model, public Cases, initial failure
-evidence, exploration tools, Patch policy, target tests, regression tests,
-timeouts, budgets, and deterministic verifier. The intended difference
-was only that full-agent mode could receive post-Patch observations,
-rollback, replan, and submit another Patch within its existing budget.
-Single-candidate mode could submit at most one candidate and received no
-post-Patch feedback.
+两种模式使用相同 Commit、模型、公开 Case、基线证据、探索工具、Patch 策略、目标测试、回归测试、超时、预算与确定性验证器。唯一计划差异：
 
-## Per-Case outcomes
+- `full-agent` 可接收 Patch 后观察、回滚、重新规划，并在原预算内提交后续候选；
+- `single-candidate-no-feedback` 最多提交一个候选，且不接收 Patch 后反馈。
 
-| Case | Full Agent | Target / regression | No feedback | Target / regression |
+## 各 Case 结果
+
+| Case | `full-agent` | 目标 / 回归 | 无反馈 | 目标 / 回归 |
 |---|---|---|---|---|
 | `commons-lang-mid-overflow` | RESOLVED | PASS / PASS | REGRESSION_FAILED | PASS / FAIL |
 | `commons-collections-int-value` | RESOLVED | PASS / PASS | RESOLVED | PASS / PASS |
@@ -62,55 +53,42 @@ post-Patch feedback.
 | `commons-csv-supplementary-delimiter` | RESOLVED | PASS / PASS | MODEL_STOPPED | NOT_RUN / NOT_RUN |
 | `commons-beanutils-nondouble-number` | RESOLVED | PASS / PASS | RESOLVED | PASS / PASS |
 
-The single-candidate Lang attempt is the one target-only false repair:
-the target passed, the regression suite failed, and the candidate was
-rolled back. By design, that observation did not return to the model and
-no REPLAN or second Patch occurred.
+Lang 的无反馈尝试是唯一只通过目标测试的 False Repair：目标 PASS、回归 FAIL，候选随后回滚。按实验设计，该反馈不会返回模型，也不会发生 `REPLAN` 或第二个 Patch。
 
-## Feedback, rollback, and replanning evidence
+## 反馈、回滚与重新规划证据
 
-The strongest observed feedback loop occurred on
-`commons-beanutils-nondouble-number` in full-agent mode:
+最明显的反馈循环出现在 `commons-beanutils-nondouble-number` 的 `full-agent` 运行：
 
-1. two accepted candidates failed the target test;
-2. both candidates were reverted;
-3. each deterministic failure produced a REPLAN request;
-4. a later candidate was policy-rejected and its structured rejection was
-   returned to the Agent;
-5. the fourth Patch attempt passed both target and regression tests.
+1. 两个被接受候选先后未通过目标测试；
+2. 两个候选都被回滚；
+3. 每次确定性失败都触发 `REPLAN`；
+4. 后续候选被策略拒绝，结构化拒绝信息返回 Agent；
+5. 第四次 Patch 让目标与回归测试都通过。
 
-That run recorded `TARGET_TEST_FAILED`, `CANDIDATE_REVERTED`,
-`PATCH_REJECTED`, and `PATCH_POLICY_REJECTED`. Its REPLAN reasons were two
-`TARGET_TEST_FAILED`, two `CANDIDATE_REVERTED`, and one `PATCH_REJECTED`.
+该运行记录了 `TARGET_TEST_FAILED`、`CANDIDATE_REVERTED`、`PATCH_REJECTED` 和 `PATCH_POLICY_REJECTED`。`REPLAN` 原因包括两次 `TARGET_TEST_FAILED`、两次 `CANDIDATE_REVERTED` 和一次 `PATCH_REJECTED`。
 
-No full-agent run consumed regression-failure feedback in this sample:
-the only regression failure occurred in the no-feedback Lang attempt.
-The full-agent Lang attempt resolved on its first candidate. It is
-therefore accurate to say that the experiment observed a target-test and
-Patch-rejection recovery path, but not to attribute the aggregate
-difference to regression feedback or to claim that feedback caused every
-paired difference.
+本样本中没有完整 Agent 运行消费回归失败反馈：唯一回归失败发生在 Lang 无反馈模式，而 Lang 的完整 Agent 在第一个候选即解决。因此可以确认实验观察到目标测试与 Patch 拒绝后的恢复路径，但不能把总差异归因于回归反馈，也不能声称反馈导致了所有 Pair Difference。
 
-## Failure dimensions
+## 失败维度
 
-### Terminal status
+### `terminal_status`
 
-| Status | Full Agent | No feedback |
+| 状态 | `full-agent` | 无反馈 |
 |---|---:|---:|
 | RESOLVED | 6 | 3 |
 | MODEL_STOPPED | 0 | 2 |
 | REGRESSION_FAILED | 0 | 1 |
 
-### Primary failure
+### `primary_failure`
 
-| Primary failure | Full Agent | No feedback |
+| 主要失败 | `full-agent` | 无反馈 |
 |---|---:|---:|
 | NO_PATCH_ACCEPTED | 0 | 2 |
 | REGRESSION_UNRESOLVED | 0 | 1 |
 
-### Observed-failure occurrences
+### `observed_failures`
 
-| Observed failure | Full Agent | No feedback |
+| 观察事件 | `full-agent` | 无反馈 |
 |---|---:|---:|
 | CANDIDATE_REVERTED | 1 | 1 |
 | PATCH_POLICY_REJECTED | 1 | 0 |
@@ -120,36 +98,31 @@ paired difference.
 | MODEL_STOPPED | 0 | 2 |
 | REGRESSION_FAILED | 0 | 1 |
 
-Terminal status, primary causal classification, and the ordered
-non-exclusive observed-failure list remain separate.
+终态、主要原因和非互斥观察事件始终分开统计。
 
-## Per-attempt evidence
+## 单次运行证据
 
-| Case | Mode | Status | Turns | Tools | Patches | Target | Regression | Tokens | Latency | Duration |
+| Case | 模式 | 状态 | Turns | Tools | Patches | 目标 | 回归 | Tokens | Latency | Duration |
 |---|---|---|---:|---:|---:|---|---|---:|---:|---:|
-| `commons-lang-mid-overflow` | full-agent | RESOLVED | 8 | 8 | 1 | PASS | PASS | 50,646 | 74.017 s | 401.407 s |
-| `commons-lang-mid-overflow` | no-feedback | REGRESSION_FAILED | 3 | 3 | 1 | PASS | FAIL | 10,838 | 59.805 s | 407.359 s |
-| `commons-collections-int-value` | no-feedback | RESOLVED | 10 | 10 | 1 | PASS | PASS | 46,284 | 67.242 s | 407.609 s |
-| `commons-collections-int-value` | full-agent | RESOLVED | 4 | 4 | 1 | PASS | PASS | 13,670 | 39.681 s | 348.969 s |
-| `commons-codec-zero-big-integer` | full-agent | RESOLVED | 9 | 9 | 1 | PASS | PASS | 57,644 | 100.679 s | 167.329 s |
-| `commons-codec-zero-big-integer` | no-feedback | RESOLVED | 5 | 5 | 1 | PASS | PASS | 39,680 | 71.004 s | 133.812 s |
-| `commons-io-bounded-reader-skip` | no-feedback | MODEL_STOPPED | 5 | 4 | 0 | NOT_RUN | NOT_RUN | 22,924 | 74.379 s | 117.703 s |
-| `commons-io-bounded-reader-skip` | full-agent | RESOLVED | 11 | 11 | 1 | PASS | PASS | 82,014 | 115.363 s | 207.032 s |
-| `commons-csv-supplementary-delimiter` | full-agent | RESOLVED | 9 | 9 | 1 | PASS | PASS | 69,417 | 270.875 s | 319.938 s |
-| `commons-csv-supplementary-delimiter` | no-feedback | MODEL_STOPPED | 9 | 8 | 0 | NOT_RUN | NOT_RUN | 64,887 | 129.908 s | 148.266 s |
-| `commons-beanutils-nondouble-number` | no-feedback | RESOLVED | 13 | 13 | 1 | PASS | PASS | 104,459 | 104.779 s | 240.313 s |
-| `commons-beanutils-nondouble-number` | full-agent | RESOLVED | 14 | 14 | 4 | PASS | PASS | 133,953 | 152.042 s | 301.047 s |
+| `commons-lang-mid-overflow` | full-agent | RESOLVED | 8 | 8 | 1 | PASS | PASS | 50,646 | 74.017s | 401.407s |
+| `commons-lang-mid-overflow` | no-feedback | REGRESSION_FAILED | 3 | 3 | 1 | PASS | FAIL | 10,838 | 59.805s | 407.359s |
+| `commons-collections-int-value` | no-feedback | RESOLVED | 10 | 10 | 1 | PASS | PASS | 46,284 | 67.242s | 407.609s |
+| `commons-collections-int-value` | full-agent | RESOLVED | 4 | 4 | 1 | PASS | PASS | 13,670 | 39.681s | 348.969s |
+| `commons-codec-zero-big-integer` | full-agent | RESOLVED | 9 | 9 | 1 | PASS | PASS | 57,644 | 100.679s | 167.329s |
+| `commons-codec-zero-big-integer` | no-feedback | RESOLVED | 5 | 5 | 1 | PASS | PASS | 39,680 | 71.004s | 133.812s |
+| `commons-io-bounded-reader-skip` | no-feedback | MODEL_STOPPED | 5 | 4 | 0 | NOT_RUN | NOT_RUN | 22,924 | 74.379s | 117.703s |
+| `commons-io-bounded-reader-skip` | full-agent | RESOLVED | 11 | 11 | 1 | PASS | PASS | 82,014 | 115.363s | 207.032s |
+| `commons-csv-supplementary-delimiter` | full-agent | RESOLVED | 9 | 9 | 1 | PASS | PASS | 69,417 | 270.875s | 319.938s |
+| `commons-csv-supplementary-delimiter` | no-feedback | MODEL_STOPPED | 9 | 8 | 0 | NOT_RUN | NOT_RUN | 64,887 | 129.908s | 148.266s |
+| `commons-beanutils-nondouble-number` | no-feedback | RESOLVED | 13 | 13 | 1 | PASS | PASS | 104,459 | 104.779s | 240.313s |
+| `commons-beanutils-nondouble-number` | full-agent | RESOLVED | 14 | 14 | 4 | PASS | PASS | 133,953 | 152.042s | 301.047s |
 
-## Integrity and limitations
+## 完整性与限制
 
-All 12 reports, traces, trajectories, artifact sizes, and SHA-256 hashes
-were replay-validated. Every attempt recorded the same experiment commit
-with `dirty=false`; all baselines reproduced; original repositories
-remained unchanged; temporary worktrees were removed. Scans found zero
-API-key, Authorization-header, hidden-fix, hidden-Patch, raw-Patch-body,
-or hidden-reasoning exposure.
+12 个 Report、Trace、Trajectory、文件大小和 SHA-256 均通过重放验证。每次尝试记录相同评估 Commit 和 `dirty=false`；所有基线复现，原始仓库不变，临时 worktree 全部移除。
 
-One run per Case and mode is a small controlled engineering ablation.
-Provider nondeterminism, model sampling, Case differences, and the small
-sample prevent causal or statistical certainty. The verifier, not model
-text, determined every RESOLVED result.
+扫描未发现 API Key、Authorization Header、隐藏 Fix、隐藏 Patch、原始 Patch 正文或隐藏推理暴露。
+
+每个 Case/模式只有一次运行。Provider 非确定性、模型采样、Case 差异和样本规模都不允许得出统计或因果结论。所有 `RESOLVED` 都由验证器而不是模型文本决定。
+
+脱敏机器摘要：[`reposuture-feedback-ablation-deepseek-summary.json`](reposuture-feedback-ablation-deepseek-summary.json)

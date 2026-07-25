@@ -1,10 +1,10 @@
-# Issue tracker: Local Markdown
+# 工作项跟踪：本地 Markdown
 
-Issues and PRDs for this repository live under `.scratch/<feature-slug>/`.
+本仓库的 Issue 与 PRD 保存在 `.scratch/<feature-slug>/`：
 
-- PRD: `.scratch/<feature-slug>/PRD.md`
-- Issues: `.scratch/<feature-slug>/issues/<NN>-<slug>.md`
-- Triage state: a `Status:` line near the top of each issue
-- Conversation history: append under `## Comments`
+- PRD：`.scratch/<feature-slug>/PRD.md`
+- Issue：`.scratch/<feature-slug>/issues/<NN>-<slug>.md`
+- Triage 状态：Issue 顶部附近的 `Status:` 行
+- 对话记录：追加到 `## Comments`
 
-When asked to publish work to the tracker, create the corresponding local Markdown file.
+需要发布到 Tracker 时，创建对应的本地 Markdown 文件。

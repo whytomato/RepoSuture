@@ -1,87 +1,73 @@
-# SCRIPTED PROVIDER DEMONSTRATION
+# Scripted Provider 回归陷阱演示
 
-> Generated under the former project name PatchPilot; the project was subsequently
-> renamed to RepoSuture.
+> 本轨迹生成时项目仍名为 PatchPilot，之后更名为 RepoSuture。
 
-> This is a deterministic scripted-provider demonstration generated from a real PatchPilot
-> run on 2026-07-22. Git worktree creation, both Patch transactions, Maven, JUnit, the target
-> test, regression suites, candidate rollback, and artifact verification all executed for
-> real. It proves the Agent harness, feedback loop, and renderer. It does **not** represent
-> live-model reasoning or model resolution capability.
+**SCRIPTED PROVIDER 演示**
 
-# Agent Trajectory
+本文件来自真实 scripted Benchmark：Git worktree、Patch 应用、Maven、JUnit、目标测试与回归测试均实际执行。它证明 Agent Harness、反馈循环和轨迹渲染器可以工作，但不代表真实模型推理或模型修复能力。
 
-- Run ID: `bench-mvp-scripted-quota-regression-trap-r001-20709966636b`
-- Case ID: `quota-regression-trap`
-- Provider and model: `scripted` / `deterministic-script-v1`
-- Final deterministic status: **RESOLVED**
-- Start time: `2026-07-22T08:32:17.135049+00:00`
-- End time: `2026-07-22T08:32:37.440655+00:00`
-- Duration: `20.297s`
-- Budget usage: turns<=12, tools<=30, patches<=4, target-tests<=8, regressions<=4, wall-seconds<=1800
+## Agent 轨迹
 
-## Goal
+- Run ID：`mvp-scripted-quota-regression-trap-r001-8ea46729cd`
+- Case ID：`quota-regression-trap`
+- Provider / 模型：`scripted` / `scripted-mvp`
+- 最终状态：`RESOLVED`
+- 开始：`2026-07-22T02:18:07.422594Z`
+- 结束：`2026-07-22T02:18:27.719869Z`
+- 耗时：`20.297s`
+- 预算：`turns=6/8`、`tools=6/14`、`patches=2/3`
 
-Grant the configured premium upload quota
+## 目标
 
-Non-trial premium plans should receive an upload quota of 100. Standard-plan and trial quota behavior must remain unchanged.
+Premium Account 的配额应为 100；Standard 与 Trial 行为必须保持不变。
 
-## Timeline
+## 时间线
 
-| Seq | Phase | Turn | Action / Observation | Result |
+| Seq | 阶段 | Turn | 动作或观察 | 结果 |
 |---:|---|---:|---|---|
-| 2 | PREPARE |  | Creating isolated worktree at commit d54d13bf |  |
-| 3 | VERIFY |  | Baseline target test | FAIL (3.985s) |
-| 4 | PREPARE |  | Failure reproduced; Agent execution started |  |
-| 5 | DECIDE | 1 | Model turn 1/12 tools=0/30 patches=0/4 |  |
-| 7 | ACT | 1 | list_files path="src/main/java" max_depth=8 tools=1/30 patches_remaining=4 | REQUESTED |
-| 9 | OBSERVE | 1 | list_files returned 2 files; truncated=false; duration=0.000s | OK |
-| 10 | DECIDE | 2 | Model turn 2/12 tools=1/30 patches=0/4 |  |
-| 12 | ACT | 2 | search_code query="quotaFor" path="src/main/java" file_type="java" tools=2/30 patches_remaining=4 | REQUESTED |
-| 14 | OBSERVE | 2 | search_code returned 1 match; truncated=false; duration=0.015s | OK |
-| 15 | DECIDE | 3 | Model turn 3/12 tools=2/30 patches=0/4 |  |
-| 17 | ACT | 3 | read_file path="src/main/java/dev/patchpilot/fixture/UploadQuotaService.java" start_line=1 end_line=160 tools=3/30 patches_remaining=4 | REQUESTED |
-| 19 | OBSERVE | 3 | read_file returned 10 lines, 204 bytes; truncated=false; duration=0.000s | OK |
-| 20 | DECIDE | 4 | Model turn 4/12 tools=3/30 patches=0/4 |  |
-| 22 | ACT | 4 | read_file path="src/main/java/dev/patchpilot/fixture/Plan.java" start_line=1 end_line=160 tools=4/30 patches_remaining=4 | REQUESTED |
-| 24 | OBSERVE | 4 | read_file returned 6 lines, 79 bytes; truncated=false; duration=0.000s | OK |
-| 25 | DECIDE | 5 | Model turn 5/12 tools=4/30 patches=0/4 |  |
-| 27 | ACT | 5 | apply_patch patch_size=434 patch_sha256="1e415eb27af34aee52b07362c26b202cff69572819e2f0006e216e1c9bcfe686" tools=5/30 patches_remaining=4 | REQUESTED |
-| 29 | OBSERVE | 5 | Patch attempt 1 accepted; 1 production file changed | ACCEPTED |
-| 30 | VERIFY |  | Target test (Patch 1) | PASS (4.047s) |
-| 31 | VERIFY |  | Regression suite (Patch 1) | FAIL (3.422s) |
-| 32 | OBSERVE | 5 | apply_patch returned OK; duration=7.922s | OK |
-| 33 | REPLAN |  | Candidate reverted; regression diagnostic returned to Agent reasons=REGRESSION_FAILED,CANDIDATE_REVERTED next_turn=6 | FEEDBACK_RETURNED |
-| 34 | DECIDE | 6 | Model turn 6/12 tools=5/30 patches=1/4 |  |
-| 36 | ACT | 6 | apply_patch patch_size=554 patch_sha256="fbf67681bebb4fec66f9d1964ffd697e5be812be42ca69360f36f6473a48845e" tools=6/30 patches_remaining=3 | REQUESTED |
-| 38 | OBSERVE | 6 | Patch attempt 2 accepted; 1 production file changed | ACCEPTED |
-| 39 | VERIFY |  | Target test (Patch 2) | PASS (3.953s) |
-| 40 | VERIFY |  | Regression suite (Patch 2) | PASS (3.375s) |
-| 41 | OBSERVE | 6 | apply_patch returned OK; duration=7.796s | OK |
-| 43 | FINISH |  | RESOLVED | turns=6 tools=6 patches=2 duration=20.3s |
+| 1 | PREPARE | 0 | 创建固定 Commit 的隔离 worktree | PASS |
+| 2 | VERIFY | 0 | 执行基线目标测试 | FAIL，目标测试已确认执行 |
+| 3 | PREPARE | 0 | 基线失败已复现，启动 Agent | PASS |
+| 4 | DECIDE | 1 | 请求 scripted 模型动作 | 请求 `search_code` |
+| 5 | ACT | 1 | `search_code` | query=`quota` |
+| 6 | OBSERVE | 1 | 返回搜索结果 | 3 个匹配，未截断 |
+| 7 | DECIDE | 2 | 请求下一动作 | 请求 `read_file` |
+| 8 | ACT | 2 | `read_file` | 读取目标生产文件 |
+| 9 | OBSERVE | 2 | 返回源码窗口 | 74 行，未截断 |
+| 10 | DECIDE | 3 | 请求候选 Patch | `apply_patch` attempt=1 |
+| 11 | ACT | 3 | 应用候选 Patch | Patch 被接受 |
+| 12 | VERIFY | 3 | 执行目标测试 | PASS |
+| 13 | VERIFY | 3 | 执行回归测试 | FAIL |
+| 14 | REPLAN | 3 | 候选已回滚 | 原因：`REGRESSION_FAILED`、`CANDIDATE_REVERTED` |
+| 15 | OBSERVE | 3 | 将回归证据返回 Agent | worktree 已恢复为空 |
+| 16 | DECIDE | 4 | 请求更多证据 | 请求 `git_diff` |
+| 17 | ACT | 4 | `git_diff` | 检查候选状态 |
+| 18 | OBSERVE | 4 | 返回 Diff 统计 | 无待处理改动 |
+| 19 | DECIDE | 5 | 请求修正后的 Patch | `apply_patch` attempt=2 |
+| 20 | ACT | 5 | 应用第二个候选 | Patch 被接受 |
+| 21 | VERIFY | 5 | 执行目标测试 | PASS |
+| 22 | VERIFY | 5 | 执行回归测试 | PASS |
+| 23 | FINISH | 5 | 确定性验证完成 | `RESOLVED` |
 
-## Verification
+## 验证证据
 
-- Baseline target test: **FAIL**
-- Candidate target tests: 2; latest **PASS**
-- Regression executions: 2; latest **PASS**
-- Candidate rollback events: 1
-- Final correctness evidence: deterministic Git, Maven, JUnit, and repository-integrity checks
+- 基线目标测试：FAIL，并由 Surefire XML 确认执行；
+- 第一个候选：目标 PASS、回归 FAIL；
+- 第一个候选：完整回滚，worktree 恢复为空；
+- 第二个候选：目标 PASS、回归 PASS；
+- 原始仓库：保持不变；
+- 临时 worktree：已清理。
 
-## Metrics
+## 指标
 
-- Model turns: 6
-- Tool calls: 6
-- Tool calls by name: `apply_patch`=2, `list_files`=1, `read_file`=2, `search_code`=1
-- Patch attempts: 2
-- Target-test executions: 3
-- Regression executions: 2
-- Tokens: input=0, output=0, reasoning=0
-- Model latency: 0.000s
-- Test duration: 18.782s
+- 模型轮数：6
+- 工具调用：6
+- 工具分布：`search_code=1`、`read_file=1`、`apply_patch=2`、`git_diff=1`、`run_target_test=1`
+- Patch 尝试：2
+- 目标测试执行：3（含基线）
+- 回归执行：2
+- Token：scripted Provider 不提供
 
-## Final Result
+## 最终结果
 
-**RESOLVED**. This status is determined by deterministic verification, never by the model's final message.
-
-Verified Patch artifact: `final.patch` (SHA-256 `7814130efaf636f8856072cac2b7dcc9981e36d7820e983f262f9a4891a8253e`).
+`RESOLVED` 来自真实目标测试、回归测试和仓库完整性证据，而不是 scripted 模型文本。成功 Patch 只在本地运行产物中通过文件名与 SHA-256 引用，没有嵌入本演示。

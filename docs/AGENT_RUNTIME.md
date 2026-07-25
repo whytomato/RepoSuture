@@ -1,157 +1,125 @@
-# RepoSuture Agent Runtime
+# RepoSuture Agent 运行时
 
-RepoSuture is a single, test-grounded software engineering Agent for bounded Java/Maven
-bug repair. The model chooses actions; the environment owns isolation, policy, execution,
-rollback, evidence, budgets, and the final status.
+RepoSuture 是一个面向有界 Java/Maven 缺陷修复、以测试为依据的单 Agent Runtime。模型选择动作；环境负责隔离、策略、执行、回滚、证据、预算和最终状态。
 
-## Agent loop
+## Agent 循环
 
-The runtime exposes the existing execution as seven deterministic display phases:
+运行过程映射为七个确定性的可见阶段：
 
-1. **PREPARE** creates a detached worktree at the Case's fixed commit and proves that the
-   selected target JUnit test fails for the expected behavior.
-2. **DECIDE** sends the complete provider-independent conversation and six strict tool
-   schemas to the configured model.
-3. **ACT** executes exactly one requested tool through `ToolExecutor`.
-4. **OBSERVE** returns the bounded structured result to the same conversation.
-5. **VERIFY** automatically runs the configured target after an accepted Patch, then the
-   full regression suite after target PASS.
-6. **REPLAN** records that a Patch rejection or failed verification was returned to the
-   Agent. It is a display label over public events, not private model reasoning.
-7. **FINISH** records deterministic success or bounded termination.
+1. **PREPARE**：在 Case 的固定 Commit 上创建 detached worktree，并证明指定 JUnit 目标测试因预期行为失败。
+2. **DECIDE**：将完整的 Provider 无关对话和六个严格工具 Schema 发送给模型。
+3. **ACT**：通过 `ToolExecutor` 执行一个模型请求的工具。
+4. **OBSERVE**：把有界、结构化结果返回同一段对话。
+5. **VERIFY**：Patch 被接受后自动执行目标测试；目标 PASS 后自动执行回归范围。
+6. **REPLAN**：记录 Patch 拒绝或验证失败已反馈给 Agent。它只是公开事件的展示标签，不代表私有推理。
+7. **FINISH**：记录确定性成功或有界终止。
 
 ```mermaid
 stateDiagram-v2
     [*] --> Prepare
-    Prepare --> Decide: baseline failure reproduced
-    Decide --> Act: model requests tool
-    Act --> Observe: tool result
-    Observe --> Decide: more evidence needed
-    Act --> Verify: Patch accepted
-    Verify --> Finish: target + regression pass
-    Verify --> Replan: rejection or test failure
-    Replan --> Decide: structured feedback
-    Decide --> Finish: stop, error, or budget
+    Prepare --> Decide: 复现基线失败
+    Decide --> Act: 模型请求工具
+    Act --> Observe: 工具返回结果
+    Observe --> Decide: 需要更多证据
+    Act --> Verify: Patch 被接受
+    Verify --> Finish: 目标与回归测试通过
+    Verify --> Replan: Patch 或测试失败
+    Replan --> Decide: 返回结构化反馈
+    Decide --> Finish: 停止、错误或预算耗尽
 ```
 
-No additional planner or reviewer model exists. The trace renderer consumes the same
-events as the runtime and cannot affect tool execution or correctness.
+系统中没有额外的 Planner 或 Reviewer 模型。轨迹渲染器只消费 Runtime 已写入的同一事件流，不能影响工具执行或正确性。
 
-## Model and environment responsibilities
+## 模型与环境的职责
 
-The model receives the public issue, bounded baseline diagnostic, conversation history,
-tool observations, and remaining budget evidence. It may select one of these tools:
+模型接收公开 Issue、基线诊断、对话历史、工具观察和剩余预算，可选择：
 
-- `list_files` — bounded repository navigation;
-- `search_code` — fixed-string, case-insensitive bounded search;
-- `read_file` — a bounded UTF-8 line window;
-- `apply_patch` — the existing normalized, policy-checked Git Patch transaction;
-- `run_target_test` — only the Case's preconfigured Maven/JUnit selector;
-- `git_diff` — bounded candidate statistics and diff observation.
+- `list_files`：有界仓库导航；
+- `search_code`：固定字符串、不区分大小写的有界搜索；
+- `read_file`：读取有界 UTF-8 行窗口；
+- `apply_patch`：提交经过规范化、策略检查的 Git Patch 事务；
+- `run_target_test`：只执行 Case 预先配置的 Maven/JUnit Selector；
+- `git_diff`：查看有界候选统计与差异。
 
-The model cannot invoke a shell, select an arbitrary test command, modify policy, create a
-worktree, decide that a test passed, or set `RESOLVED`. Responses API continuation remains
-provider-independent through `LLMClient`; stateless providers receive the complete required
-conversation on each request.
+模型不能执行 Shell、选择任意测试命令、修改策略、创建 worktree、自行判定测试通过或设置 `RESOLVED`。Responses API 续接通过 Provider 无关的 `LLMClient` 完成；无状态 Provider 的每次请求都包含继续执行所需的完整历史。
 
-RepoSuture requests one tool action per model turn. If an OpenAI-compatible endpoint returns
-multiple function calls despite `parallel_tool_calls=false`, the adapter retains the first
-call and the provider output prefix required for it, excludes the unexecuted calls from
-stateless continuation, and records `provider_tool_calls_sequentialized` with only bounded
-counts. The first real observation must return to the model before it can choose another
-action; RepoSuture never silently batch-executes the extra calls.
+RepoSuture 每轮只执行一个工具动作。如果 OpenAI-compatible Endpoint 在 `parallel_tool_calls=false` 时仍返回多个 Function Call，适配器只保留第一个调用及其所需输出前缀，后续未执行调用不会进入无状态续接，并通过 `provider_tool_calls_sequentialized` 记录有界计数。模型必须先看到第一个真实观察，才能决定下一步。
 
-The environment validates tool schemas, paths, symlink/reparse containment, allowed file
-classes, Patch structure and Git applicability. It executes all subprocesses with argument
-arrays, explicit working directories and timeouts. Tests, build files, Maven Wrapper files,
-CI, Git metadata, and non-production Java files are rejected before Patch application.
+环境负责校验工具 Schema、路径、symlink/reparse containment、允许文件类型、Patch 结构与 Git 适用性。所有子进程都使用参数数组、显式工作目录和超时。测试、构建文件、Maven Wrapper、CI、Git 元数据和非生产 Java 文件会在 Patch 应用前被拒绝。
 
-## Automatic verification and rollback
+## 自动验证与回滚
 
-An accepted Patch immediately triggers the target test. Only observed Surefire/JUnit
-evidence counts. Target PASS triggers the full regression suite. Both PASS results, an
-unchanged verified diff, original-repository integrity, worktree cleanup, and artifact
-integrity are required for `RESOLVED`.
+Patch 被接受后立即执行目标测试，只有 Surefire/JUnit 证据有效。目标 PASS 后执行配置的回归范围。目标与回归均 PASS、最终 diff 合规、原始仓库不变、worktree 清理成功且产物完整，才能得到 `RESOLVED`。
 
-When the target or regression suite fails and budget remains, RepoSuture restores the
-candidate transaction, verifies that the worktree diff is empty, and returns bounded
-failure evidence to the Agent. The next model request is preceded by an
-`agent_replan_requested` event with public reasons such as `PATCH_REJECTED`,
-`TARGET_TEST_FAILED`, `REGRESSION_FAILED`, and `CANDIDATE_REVERTED`. A rollback failure is
-terminal infrastructure failure; execution never continues on unknown repository state.
+如果目标或回归失败且仍有预算，RepoSuture 会：
 
-### Single-candidate feedback ablation
+1. 回滚本次候选事务；
+2. 验证 worktree diff 为空；
+3. 将有界失败证据返回 Agent；
+4. 在下一次模型请求前写入 `agent_replan_requested`。
 
-Release 0.4 exposes `single-candidate-no-feedback` only as an evaluation baseline. It uses
-the same Agent Runtime and lets the model use the normal read-only exploration tools, but
-permits at most one Patch. A rejected Patch ends the attempt. An accepted Patch still
-receives real target and regression verification, but those post-Patch observations are
-not sent back to the model, no REPLAN occurs, and no second candidate is allowed.
-`RESOLVED` retains the identical deterministic oracle. This isolates the engineering value
-of verification feedback without introducing another Agent or provider path.
+公开的重新规划原因包括 `PATCH_REJECTED`、`TARGET_TEST_FAILED`、`REGRESSION_FAILED` 和 `CANDIDATE_REVERTED`。回滚失败属于终止性基础设施错误；系统不会继续操作状态未知的仓库。
 
-The final Release 0.4 controlled run used six locked real-world Cases and
-`deepseek/deepseek-v4-pro`: full-agent resolved 6/6 while
-single-candidate-no-feedback resolved 3/6. The BeanUtils full-agent run
-used target-test failure, rollback, structured Patch rejection, and
-REPLAN before resolving; the no-feedback Lang run passed its target but
-failed regression and could not replan. No full-agent run consumed
-regression-failure feedback in this small sample, so the comparison is
-engineering evidence rather than causal proof. See
-[`results/reposuture-feedback-ablation-deepseek.md`](results/reposuture-feedback-ablation-deepseek.md).
+### 单候选无反馈模式
 
-## Budgets and termination
+`single-candidate-no-feedback` 只用于受控消融，不是另一套 Agent Runtime。模型仍可使用正常的只读探索工具，但最多提交一个 Patch：
 
-Cases define independent limits for model turns, tool calls, Patch attempts, target-test
-executions, regression executions, API calls, retained outputs, timeouts, and wall-clock
-duration. CLI overrides can lower or replace supported run limits. Rejected Patches consume
-Patch attempts. Exhaustion produces `AGENT_BUDGET_EXHAUSTED`; a model stop, provider error,
-policy rejection, and infrastructure error remain distinct terminal outcomes.
+- Patch 被拒绝时直接结束；
+- Patch 被接受后仍执行真实目标与回归验证；
+- Patch 后的验证结果不返回模型；
+- 不产生 `REPLAN`；
+- 不允许第二个候选。
 
-Reports distinguish `terminal_status` (how the loop ended), centralized
-`primary_failure` (the strongest evidence-aware cause), and ordered deduplicated
-`observed_failures` (all relevant events). A late search error or budget terminal cannot
-erase earlier target or regression evidence.
+两种模式使用相同 Provider、Case、工具、策略、测试与正确性判据。Release 0.4 的六 Case DeepSeek 实验中，`full-agent` 解决 6/6，`single-candidate-no-feedback` 解决 3/6。该结果是小样本工程证据，不是因果证明。详见[反馈消融报告](results/reposuture-feedback-ablation-deepseek.md)。
 
-## Trace, live view, and replay
+## 预算与终止
 
-`trace.jsonl` is the canonical Agent history. Every line has a monotonic sequence, UTC
-timestamp, event type, status, optional duration, run id, and bounded sanitized metadata.
-The optional live observer receives exactly the already-sanitized event written to disk.
-If rendering raises, the observer is disabled and Agent execution continues unchanged.
+Case 可以独立限制：
 
-`reposuture repair --trace-view compact|verbose|off` presents the event stream while the run
-executes. The formatter describes requested actions and returned evidence; it never says
-that the Agent "thought" something.
+- 模型轮数与请求数；
+- 工具调用；
+- Patch 尝试；
+- 目标与回归执行次数；
+- API 调用；
+- 输出保留量；
+- 测试和总墙钟超时。
 
-Every repair outcome with sufficient trace data generates `trajectory.md`. It contains the
-public goal, event-derived timeline, deterministic verification evidence, counters, timing,
-and final status. A successful document refers to `final.patch` by artifact-relative name
-and SHA-256 rather than embedding it.
+被拒绝的 Patch 仍消耗一次 Patch 尝试。预算耗尽产生 `AGENT_BUDGET_EXHAUSTED`；模型停止、Provider 错误、策略拒绝和基础设施错误保持独立终止结果。
 
-`reposuture replay-run PATH` accepts a run directory, `report.json`, or `trace.jsonl`. It
-validates both schemas, sequence ordering, run ids, final-status consistency, path
-containment, artifact sizes, and hashes. Replay performs no model request, Git mutation,
-Maven execution, or network request. Text and Markdown replay use the same semantic event
-projection as the live observer.
+报告分别记录：
 
-Per-run reports serialize artifact references relative to the directory containing
-`report.json`. Moving the complete directory therefore preserves replay while size and SHA-256
-remain authoritative. Legacy all-absolute reports are remapped only as one coherent run with
-matching local identity evidence; traversal and symlink/junction escape remain invalid.
+- `terminal_status`：循环如何结束；
+- `primary_failure`：统一分类器给出的最强主要原因；
+- `observed_failures`：按顺序去重的全部相关事件。
 
-## Why no multi-agent framework is required
+后出现的搜索错误或预算终止不会擦除更强的目标或回归证据。
 
-The current scope has one decision maker, six local tools, a bounded synchronous loop, and
-one deterministic verifier. A multi-agent framework would add coordination state without
-changing the correctness oracle or the required behavior. RepoSuture keeps the provider
-boundary small and the runtime directly testable.
+## 轨迹、实时展示与重放
 
-## Hidden reasoning policy
+`trace.jsonl` 是唯一权威的 Agent 历史。每一行包含单调递增 Sequence、UTC 时间、事件类型、状态、可选耗时、Run ID 和有界脱敏元数据。可选实时 Observer 只接收已经写入磁盘的脱敏事件；渲染异常会禁用 Observer，但不会改变 Agent 执行结果。
 
-RepoSuture does not request, store, render, or reconstruct hidden chain-of-thought.
-Provider-internal reasoning items required for protocol continuation may remain in memory,
-but are not written to reports, traces, trajectories, or CLI output. Reasoning token counts
-may be recorded when the provider exposes them. Raw Patch bodies, complete source files,
-complete Maven logs, API credentials, authorization headers, hidden golden Patches, and
-validation-only metadata are also excluded from trajectory events.
+`reposuture repair --trace-view compact|verbose|off` 在运行时展示该事件流。渲染器只描述已请求动作和返回证据，不声称 Agent “想了什么”。
+
+每次具备足够 Trace 的运行都会生成 `trajectory.md`，其中包含：
+
+- 公开目标；
+- 由事件派生的时间线；
+- 确定性验证证据；
+- 预算、计数与耗时；
+- 最终状态。
+
+成功轨迹只通过相对路径和 SHA-256 引用 `final.patch`，不会嵌入 Patch 正文。
+
+`reposuture replay-run PATH` 接受运行目录、`report.json` 或 `trace.jsonl`。它会校验 Schema、Sequence、Run ID、终态一致性、路径 containment、文件大小和 SHA-256。重放不会请求模型、修改 Git、执行 Maven 或访问网络；文本与 Markdown 输出使用和实时 Observer 相同的语义投影。
+
+新报告中的产物引用相对于 `report.json` 所在目录，因此完整运行目录移动后仍可重放。旧版全绝对路径报告只有在其引用共同属于同一运行，且本地文件身份、大小和哈希一致时才会安全重映射。路径穿越与 symlink/junction 逃逸仍然无效。
+
+## 为什么不需要多 Agent 框架
+
+当前问题只有一个决策者、六个本地工具、一个有界同步循环和一个确定性验证器。引入多 Agent 框架会增加协调状态，却不会改变正确性判据或当前行为。保持较小的 Provider 边界能让 Runtime 更容易直接测试和审计。
+
+## 隐藏推理策略
+
+RepoSuture 不请求、存储、渲染或重建隐藏 Chain-of-Thought。Provider 协议续接所需的内部 Reasoning Item 可暂存于内存，但不会写入报告、Trace、Trajectory 或 CLI 输出。Provider 明确提供时，只记录 Reasoning Token 数量。
+
+轨迹事件同样不包含原始 Patch、完整源码、完整 Maven 日志、API 凭据、Authorization Header、Golden Patch 或仅供验证的隐藏元数据。

@@ -1,7 +1,7 @@
-# Triage Labels
+# 分类标签
 
-| Canonical role | Local status |
-| --- | --- |
+| 标准角色 | 本地状态 |
+|---|---|
 | `needs-triage` | `needs-triage` |
 | `needs-info` | `needs-info` |
 | `ready-for-agent` | `ready-for-agent` |

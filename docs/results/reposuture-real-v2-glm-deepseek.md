@@ -1,115 +1,89 @@
-# RepoSuture real-world V2 evaluation — GLM-5.2 and DeepSeek V4 Pro
+# RepoSuture 真实缺陷 V2 评估：GLM-5.2 与 DeepSeek V4 Pro
 
-This is the canonical RepoSuture 0.4 live repair evaluation. It contains
-**28 fresh assigned and completed attempts** from one immutable clean source commit.
-No failed attempt was replaced, no prior partial observation was resumed, and no GPT
-model was used.
+这是 RepoSuture 0.4 的最终真实修复评估。全部 **28 次分配尝试均为新运行且已完成**，并来自同一个不可变、干净的源码 Commit。没有替换失败尝试，没有续跑旧的部分数据，也没有使用 GPT 模型。
 
-The result is descriptive. It is **not pass@k**: the original three Bugs have three
-repetitions per model, while each of the five additions has one breadth observation per
-model. Three repetitions remain a small sample and one observation is not a stable
-success-rate estimate. This suite does not establish universal Java repair capability.
+结果仅作描述性工程证据，不是 pass@k。原有三个 Bug 每个模型重复三次，新增五个 Bug 每个模型只有一次广度观察。三次重复仍是小样本，单次观察不能视为稳定成功率；本 Suite 也不能证明通用 Java 修复能力。
 
-## Reproducibility
+## 复现信息
 
-- Evaluation window: `2026-07-25T10:36:17.369224Z` to
-  `2026-07-25T13:19:47.992738Z`
-- RepoSuture experiment commit:
-  `e3cafd30edec3802c6bf88177e9c6a702e9c7e03`
-- Source tree: `dirty=false`
-- Provider: OpenRouter-compatible Responses API
-- Endpoint: `https://openrouter.ai/api/v1`
-- Models: `z-ai/glm-5.2` and `deepseek/deepseek-v4-pro`
-- Suite: `maven-real-world-v2`
-- Benchmark fingerprint:
-  `65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`
-- Schedule: deterministic, sequential, interleaved
-- Original Cases: `3 Cases × 3 runs × 2 models = 18 attempts`
-- Added Cases: `5 Cases × 1 run × 2 models = 10 attempts`
-- Total: `28 assigned = 28 completed`
-- Dry-run plan SHA-256:
-  `7c65663bc8a98614b3d5a4175293dbc5d2221e98fbe686f32b2655fd6bb607cf`
+- 评估时间：`2026-07-25T10:36:17.369224Z` 至 `2026-07-25T13:19:47.992738Z`
+- RepoSuture 评估 Commit：`e3cafd30edec3802c6bf88177e9c6a702e9c7e03`
+- 源码树：`dirty=false`
+- Provider：OpenRouter-compatible Responses API
+- Endpoint：`https://openrouter.ai/api/v1`
+- 模型：`z-ai/glm-5.2`、`deepseek/deepseek-v4-pro`
+- Suite：`maven-real-world-v2`
+- 基准指纹：`65d9547c2a05574d85a8d8689bd3e925ae7b24683bd22d417a05022dd8a7b1e2`
+- 调度：确定性、顺序、交错
+- 原有 Case：`3 Cases × 3 runs × 2 models = 18 attempts`
+- 新增 Case：`5 Cases × 1 run × 2 models = 10 attempts`
+- 总数：`28 assigned = 28 completed`
+- Dry-run Plan SHA-256：`7c65663bc8a98614b3d5a4175293dbc5d2221e98fbe686f32b2655fd6bb607cf`
 
-The public OpenRouter catalog was checked on `2026-07-25` before execution. Both exact
-model ids were present, each advertised `tools` and `tool_choice`, and each advertised a
-1,048,576-token context. Catalog availability was not treated as execution evidence;
-Provider/model lifecycle counts below come from the completed run reports.
+执行前于 `2026-07-25` 查询 OpenRouter 公开目录。两个准确模型 ID 均存在，均声明支持 `tools` 与 `tool_choice`，并标注 1,048,576 Token Context。目录可用性不作为模型实际执行证据；下方 Provider 与模型生命周期计数来自单次运行报告。
 
-An earlier partial run on a pre-correction commit exposed a generic classification defect:
-a model-generated candidate compilation failure was incorrectly classified as
-infrastructure. That dataset was invalidated, the defect was fixed before this clean
-rerun, and **none of its observations are included here**.
+更早的一组部分运行暴露了一个通用分类缺陷：模型候选导致的编译失败被错误归为基础设施失败。该数据集已作废；修复后才执行本次干净重跑，**下列指标不包含任何旧观察**。
 
-## Denominators and aggregate result
+## 分母与汇总结果
 
-RepoSuture reports three different rates:
+RepoSuture 分开报告三类比率：
 
-- system end-to-end resolution = resolved / assigned;
-- Provider acceptance = Provider-accepted / assigned;
-- capability resolution = resolved / model-executed.
+- 系统端到端解决率：`resolved / assigned`
+- Provider 接受率：`provider accepted / assigned`
+- 模型能力解决率：`resolved / model executed`
 
-When model-executed is zero, capability and its Wilson interval are N/A rather than 0%.
-That zero-denominator case did not occur in this experiment: all 28 attempts entered real
-model execution and produced at least one valid model-requested Tool Call.
+当 `model executed = 0` 时，能力率及其 Wilson 区间为 `N/A`，而不是 0%。本实验没有零分母：28 次尝试全部进入真实模型执行，并至少产生一个有效的模型工具请求。
 
-| Metric | GLM-5.2 | DeepSeek V4 Pro | Combined |
+| 指标 | GLM-5.2 | DeepSeek V4 Pro | 合计 |
 |---|---:|---:|---:|
-| Assigned / completed | 14 / 14 | 14 / 14 | 28 / 28 |
-| Baseline reproduced | 14 | 14 | 28 |
-| Provider accepted | 14 | 14 | 28 |
-| Model executed | 14 | 14 | 28 |
-| Model Tool Call observed | 14 | 14 | 28 |
-| Resolved | 12 | 11 | 23 |
-| System end-to-end rate | 0.857 | 0.786 | 0.821 |
-| System descriptive Wilson 95% | [0.601, 0.960] | [0.524, 0.924] | [0.644, 0.921] |
-| Provider acceptance rate | 1.000 | 1.000 | 1.000 |
-| Capability rate | 0.857 | 0.786 | 0.821 |
-| Capability descriptive Wilson 95% | [0.601, 0.960] | [0.524, 0.924] | [0.644, 0.921] |
-| Target PASS | 13 | 13 | 26 |
-| Regression PASS | 12 | 11 | 23 |
-| Original-repository integrity | 14/14 | 14/14 | 28/28 |
+| 分配 / 完成 | 14 / 14 | 14 / 14 | 28 / 28 |
+| 基线复现 | 14 | 14 | 28 |
+| Provider 接受 | 14 | 14 | 28 |
+| 模型执行 | 14 | 14 | 28 |
+| 观察到模型 Tool Call | 14 | 14 | 28 |
+| `RESOLVED` | 12 | 11 | 23 |
+| 系统端到端率 | 0.857 | 0.786 | 0.821 |
+| 系统描述性 Wilson 95% 区间 | [0.601, 0.960] | [0.524, 0.924] | [0.644, 0.921] |
+| Provider 接受率 | 1.000 | 1.000 | 1.000 |
+| 模型能力率 | 0.857 | 0.786 | 0.821 |
+| 能力描述性 Wilson 95% 区间 | [0.601, 0.960] | [0.524, 0.924] | [0.644, 0.921] |
+| 目标测试 PASS | 13 | 13 | 26 |
+| 回归 PASS | 12 | 11 | 23 |
+| 原始仓库完整性 | 14/14 | 14/14 | 28/28 |
 
-The intervals are descriptive Wilson intervals over attempt-level observations. The
-overlap is substantial; the resolved-count difference is not evidence of a statistically
-conclusive winner.
+Wilson 区间以 Attempt 为观察单位，仅作描述。两者区间高度重叠，`RESOLVED` 数量差异不足以说明存在统计上确定的胜者。
 
-## Original three-Bug stability
+## 原有三个 Bug 的重复结果
 
-Each cell shows the three terminal statuses in run order.
+每格按 Run 顺序列出三个终态。
 
-| Case | GLM success | GLM runs | DeepSeek success | DeepSeek runs |
+| Case | GLM 成功 | GLM 运行 | DeepSeek 成功 | DeepSeek 运行 |
 |---|---:|---|---:|---|
 | `commons-lang-mid-overflow` | 2/3 | RESOLVED, RESOLVED, AGENT_BUDGET_EXHAUSTED | 1/3 | MODEL_STOPPED, RESOLVED, AGENT_BUDGET_EXHAUSTED |
 | `commons-collections-int-value` | 3/3 | RESOLVED, RESOLVED, RESOLVED | 3/3 | RESOLVED, RESOLVED, RESOLVED |
 | `commons-collections-flat3map-entry` | 3/3 | RESOLVED, RESOLVED, RESOLVED | 3/3 | RESOLVED, RESOLVED, RESOLVED |
 
-Both models were stable on the two Commons Collections Bugs in these three repetitions.
-Commons Lang remained regression-sensitive: GLM resolved two of three and DeepSeek one of
-three. The unresolved runs retained target-PASS/regression-FAIL evidence and were not
-replaced.
+在这三次重复中，两种模型都稳定解决了两个 Commons Collections Bug。Commons Lang 仍对回归敏感：GLM 解决 2/3，DeepSeek 解决 1/3。未解决运行保留了目标 PASS、回归 FAIL 证据，没有被替换。
 
-## Five new-Bug breadth observations
+## 新增五个 Bug 的广度观察
 
-Each result is one attempt only and must not be read as a stable success rate.
+每格只有一次尝试，不能解释为稳定成功率。
 
-| Case | Category | GLM | DeepSeek |
+| Case | 类别 | GLM | DeepSeek |
 |---|---|---|---|
-| `commons-codec-zero-big-integer` | binary encoding boundary | RESOLVED | RESOLVED |
-| `commons-text-csv-lone-quote` | CSV quote parsing | RESOLVED | RESOLVED |
-| `commons-io-bounded-reader-skip` | range accounting | RESOLVED | RESOLVED |
-| `commons-csv-supplementary-delimiter` | Unicode delimiter byte tracking | MODEL_STOPPED | MODEL_STOPPED |
-| `commons-beanutils-nondouble-number` | numeric conversion | RESOLVED | RESOLVED |
+| `commons-codec-zero-big-integer` | 二进制编码边界 | RESOLVED | RESOLVED |
+| `commons-text-csv-lone-quote` | CSV 引号解析 | RESOLVED | RESOLVED |
+| `commons-io-bounded-reader-skip` | 范围计数 | RESOLVED | RESOLVED |
+| `commons-csv-supplementary-delimiter` | Unicode 分隔符字节跟踪 | MODEL_STOPPED | MODEL_STOPPED |
+| `commons-beanutils-nondouble-number` | 数值转换 | RESOLVED | RESOLVED |
 
-Both models resolved four of the five breadth observations. Neither submitted an accepted
-candidate for the Commons CSV supplementary-delimiter Case before stopping.
+两种模型都解决 4/5。Commons CSV supplementary-delimiter Case 中，两者都在提交可接受候选前停止。
 
-## Complete attempt evidence
+## 完整 Attempt 证据
 
-Tools are `generated/executed/discarded`; tokens are
-`input/output/reasoning`. Reasoning tokens are provider telemetry and are not hidden
-reasoning content.
+Tools 格式为 `generated/executed/discarded`；Tokens 格式为 `input/output/reasoning`。Reasoning Token 只是 Provider Telemetry，不包含隐藏推理正文。
 
-| Seq | Case | Run | Model | Terminal | Primary failure | Target | Regression | Turns | Tools | Patches (rejected) | Tokens | Wall s |
+| Seq | Case | Run | 模型 | 终态 | 主要失败 | 目标 | 回归 | Turns | Tools | Patches（拒绝） | Tokens | Wall s |
 |---:|---|---:|---|---|---|---|---|---:|---:|---:|---:|---:|
 | 1 | `commons-lang-mid-overflow` | 1 | DeepSeek | MODEL_STOPPED | REGRESSION_UNRESOLVED | PASS | FAIL | 11 | 11/10/1 | 1 (0) | 55,341/2,628/1,426 | 445.781 |
 | 2 | `commons-lang-mid-overflow` | 1 | GLM | RESOLVED | — | PASS | PASS | 18 | 21/18/3 | 3 (0) | 181,143/5,840/4,701 | 1,133.266 |
@@ -140,59 +114,47 @@ reasoning content.
 | 27 | `commons-collections-flat3map-entry` | 3 | DeepSeek | RESOLVED | — | PASS | PASS | 5 | 6/5/1 | 1 (0) | 31,409/1,401/596 | 385.563 |
 | 28 | `commons-collections-flat3map-entry` | 3 | GLM | RESOLVED | — | PASS | PASS | 7 | 7/7/0 | 1 (0) | 23,490/586/131 | 390.438 |
 
-## Failure analysis
+## 失败分析
 
-The three failure dimensions remain separate:
+三个失败维度保持独立：
 
-| Distribution | GLM-5.2 | DeepSeek V4 Pro |
+| 分布 | GLM-5.2 | DeepSeek V4 Pro |
 |---|---|---|
-| Terminal status | RESOLVED=12, MODEL_STOPPED=1, AGENT_BUDGET_EXHAUSTED=1 | RESOLVED=11, MODEL_STOPPED=2, AGENT_BUDGET_EXHAUSTED=1 |
-| Primary failure | NO_PATCH_ACCEPTED=1, REGRESSION_UNRESOLVED=1 | NO_PATCH_ACCEPTED=1, REGRESSION_UNRESOLVED=2 |
-| Observed failures (non-exclusive) | SEARCH_TOOL_ERROR=6, READ_TOOL_ERROR=3, PATCH_REJECTED=2, PATCH_GIT_CHECK_FAILED=1, TARGET_TEST_FAILED=1, REGRESSION_FAILED=3, CANDIDATE_REVERTED=4, MODEL_STOPPED=1, BUDGET_EXHAUSTED=1 | SEARCH_TOOL_ERROR=8, READ_TOOL_ERROR=1, TARGET_TEST_FAILED=1, REGRESSION_FAILED=3, CANDIDATE_REVERTED=4, MODEL_STOPPED=2, BUDGET_EXHAUSTED=1 |
+| `terminal_status` | RESOLVED=12, MODEL_STOPPED=1, AGENT_BUDGET_EXHAUSTED=1 | RESOLVED=11, MODEL_STOPPED=2, AGENT_BUDGET_EXHAUSTED=1 |
+| `primary_failure` | NO_PATCH_ACCEPTED=1, REGRESSION_UNRESOLVED=1 | NO_PATCH_ACCEPTED=1, REGRESSION_UNRESOLVED=2 |
+| `observed_failures`（非互斥） | SEARCH_TOOL_ERROR=6, READ_TOOL_ERROR=3, PATCH_REJECTED=2, PATCH_GIT_CHECK_FAILED=1, TARGET_TEST_FAILED=1, REGRESSION_FAILED=3, CANDIDATE_REVERTED=4, MODEL_STOPPED=1, BUDGET_EXHAUSTED=1 | SEARCH_TOOL_ERROR=8, READ_TOOL_ERROR=1, TARGET_TEST_FAILED=1, REGRESSION_FAILED=3, CANDIDATE_REVERTED=4, MODEL_STOPPED=2, BUDGET_EXHAUSTED=1 |
 
-The two budget terminals retain `REGRESSION_UNRESOLVED` as the primary cause. A later
-search error or budget event did not overwrite stronger target-PASS/regression-FAIL
-evidence. There were no Provider rejections, API failures, infrastructure failures,
-repository-integrity failures, or artifact-integrity failures.
+两个预算耗尽运行都保留 `REGRESSION_UNRESOLVED` 为主要原因；后续搜索错误或预算事件没有覆盖目标 PASS、回归 FAIL 证据。实验中没有 Provider 拒绝、API 错误、基础设施错误、仓库完整性错误或产物完整性错误。
 
-## Tool, Patch, token, and timing evidence
+## 工具、Patch、Token 与耗时
 
-| Metric | GLM-5.2 | DeepSeek V4 Pro |
+| 指标 | GLM-5.2 | DeepSeek V4 Pro |
 |---|---:|---:|
-| Model turns / requests | 119 / 119 | 129 / 129 |
-| Tool Calls generated / executed / discarded | 134 / 118 / 16 | 144 / 127 / 17 |
-| Executed tools | read=48, search=43, patch=20, list=3, target=2, diff=2 | read=55, search=51, patch=15, list=3, target=2, diff=1 |
-| Patch attempts / rejected | 20 / 2 | 15 / 0 |
-| Runs using normalization | 0 | 13 |
-| Normalization operations | 0 | 15 × `ENSURED_FINAL_NEWLINE` |
-| Runs using recount | 7 | 4 |
-| Input / output / reasoning tokens | 738,055 / 26,926 / 19,022 | 813,047 / 49,218 / 33,437 |
-| Total model latency | 781.233s | 1,447.262s |
-| Average model latency | 55.802s | 103.376s |
-| Total test duration | 4,066.507s | 3,199.171s |
-| Average test duration | 290.465s | 228.512s |
-| Total wall-clock duration | 5,009.017s | 4,798.923s |
-| Average wall-clock duration | 357.787s | 342.780s |
+| 模型 Turns / Requests | 119 / 119 | 129 / 129 |
+| Tool Calls 生成 / 执行 / 丢弃 | 134 / 118 / 16 | 144 / 127 / 17 |
+| 已执行工具 | read=48, search=43, patch=20, list=3, target=2, diff=2 | read=55, search=51, patch=15, list=3, target=2, diff=1 |
+| Patch 尝试 / 拒绝 | 20 / 2 | 15 / 0 |
+| 使用规范化的 Run | 0 | 13 |
+| 规范化操作 | 0 | 15 × `ENSURED_FINAL_NEWLINE` |
+| 使用 Recount 的 Run | 7 | 4 |
+| Input / Output / Reasoning Tokens | 738,055 / 26,926 / 19,022 | 813,047 / 49,218 / 33,437 |
+| 模型延迟合计 | 781.233s | 1,447.262s |
+| 模型延迟均值 | 55.802s | 103.376s |
+| 测试耗时合计 | 4,066.507s | 3,199.171s |
+| 测试耗时均值 | 290.465s | 228.512s |
+| 墙钟耗时合计 | 5,009.017s | 4,798.923s |
+| 墙钟耗时均值 | 357.787s | 342.780s |
 
-DeepSeek generated more output/reasoning tokens and had higher model latency in this
-sample. GLM submitted more candidate Patches and used recount more often. Tool-protocol
-discarding occurred for both models because only the first provider call per turn is
-executed by the single-action Agent loop.
+在本样本中，DeepSeek 产生更多 Output/Reasoning Token，模型延迟也更高；GLM 提交更多候选 Patch，使用 Recount 更频繁。两种模型都出现 Tool Call 丢弃，因为单动作 Agent Loop 每轮只执行 Provider 返回的第一个调用。
 
-## Integrity review
+## 完整性审计
 
-- All 28 individual reports, traces, trajectories, attempt manifests, artifact sizes,
-  and SHA-256 values were reloaded and validated.
-- All reports record the exact experiment commit and `dirty=false`.
-- All 28 baselines genuinely reproduced; real Maven/JUnit ran for baselines and accepted
-  candidates.
-- Every temporary worktree was removed. All eight fixture repositories remained clean
-  with only their original registered worktree.
-- Exact API-key and Authorization-header scans across the raw local artifact root found
-  zero matches.
-- Agent-visible trace/trajectory scans found zero hidden-fix, golden-Patch, validation
-  metadata, or raw Patch-body markers.
-- Raw live artifacts and third-party caches remain ignored and are not committed.
+- 28 个 Report、Trace、Trajectory、Attempt Manifest、文件大小和 SHA-256 均重新加载并通过验证；
+- 所有报告记录准确评估 Commit 与 `dirty=false`；
+- 28 个基线全部真实复现；基线与被接受候选均执行真实 Maven/JUnit；
+- 临时 worktree 全部移除，八个 Fixture 仓库均保持干净；
+- 原始本地产物中 API Key 与 Authorization Header 精确匹配数为 0；
+- Agent 可见 Trace/Trajectory 中隐藏 Fix、Golden Patch、验证元数据与原始 Patch 标记匹配数为 0；
+- 原始 live 产物和第三方缓存均被忽略且未提交。
 
-The sanitized machine-readable companion is
-[`reposuture-real-v2-glm-deepseek-summary.json`](reposuture-real-v2-glm-deepseek-summary.json).
+脱敏机器摘要：[`reposuture-real-v2-glm-deepseek-summary.json`](reposuture-real-v2-glm-deepseek-summary.json)

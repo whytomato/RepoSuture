@@ -1,123 +1,96 @@
-# RepoSuture real-world Java evaluation — R1
+# RepoSuture 真实 Java 缺陷评估：R1
 
-This is a genuine live-model evaluation of the locked `maven-real-world-v1` suite. It
-contains exactly one attempt for each of three upstream Bugs and each of two models:
-**six assigned attempts in total**. A zero-success or failed attempt was retained rather
-than replaced.
+> **历史结果。** 本报告保留 Release 0.3 的首次真实缺陷运行；当前 Release 0.4 的八 Case 最终评估见[最新报告](reposuture-real-v2-glm-deepseek.md)。
 
-One run per Case/model is a smoke-level empirical observation. It is not pass@k, is not
-statistically robust, and does not establish broad real-world Java repair capability.
+本实验对锁定的 `maven-real-world-v1` Suite 执行真实模型评估：三个上游 Bug、两个模型各一次，共 **六次分配尝试**。失败或零成功结果均保留，没有补跑。
 
-## Reproducibility
+每个 Case/模型只有一次，是 Smoke 级经验观察；它不是 pass@k，不具备统计稳健性，也不能代表广泛的真实 Java 修复能力。
 
-- Evaluation completed: `2026-07-24T09:17:48.356746Z`
-- RepoSuture commit: `6f0ced786524c7e4f3514a284b826eac9865bcac`
-- Source tree: `dirty=false`
-- Provider: OpenRouter-compatible Responses API
-- Endpoint: `https://openrouter.ai/api/v1`
-- Models: `z-ai/glm-5.2` and `openai/gpt-5-mini`
-- Suite: `maven-real-world-v1`
-- Benchmark fingerprint:
-  `345839d264b3b5c144fa8f9bbc75b419d917a4c0266d80c119c3dfb34ec19e82`
-- Runs per Case/model: `1`
-- Schedule: deterministic, sequential, interleaved
-- Planned and completed attempts: `6`
+## 复现信息
 
-## Upstream provenance and construction
+- 完成时间：`2026-07-24T09:17:48.356746Z`
+- RepoSuture Commit：`6f0ced786524c7e4f3514a284b826eac9865bcac`
+- 源码树：`dirty=false`
+- Provider：OpenRouter-compatible Responses API
+- Endpoint：`https://openrouter.ai/api/v1`
+- 模型：`z-ai/glm-5.2`、`openai/gpt-5-mini`
+- Suite：`maven-real-world-v1`
+- 基准指纹：`345839d264b3b5c144fa8f9bbc75b419d917a4c0266d80c119c3dfb34ec19e82`
+- 每个 Case/模型运行：`1`
+- 调度：确定性、顺序、交错
+- 计划 / 完成：`6 / 6`
 
-| Case | Upstream project | Public bug/fix record | License | Buggy commit | Fix commit | Category |
+## 上游来源与构造
+
+| Case | 上游项目 | 公开记录 | 许可证 | Buggy Commit | Fix Commit | 类别 |
 |---|---|---|---|---|---|---|
-| `commons-lang-mid-overflow` | Apache Commons Lang | [PR #1699](https://github.com/apache/commons-lang/pull/1699) | Apache-2.0 | `e6b8bbd39505694012d869fa2107ef068b88d800` | `2240c1f93e5f96b12a83ec8615c29dfac46258e9` | overflow boundary across two production APIs |
-| `commons-collections-int-value` | Apache Commons Collections | [PR #704](https://github.com/apache/commons-collections/pull/704) | Apache-2.0 | `b219ccbe7b95250abd3ba3143edf340b7fad1943` | `6171ecbb1dc89f3e2d3bae659b6364995fbc6027` | numeric data conversion |
-| `commons-collections-flat3map-entry` | Apache Commons Collections | [PR #714](https://github.com/apache/commons-collections/pull/714) | Apache-2.0 | `68a3c306d81dffe5bad59443dba3a7f5513178f4` | `14375bdba38421c174d646c40b8b757cce52dd45` | collection-entry conditional semantics |
+| `commons-lang-mid-overflow` | Apache Commons Lang | [PR 1699](https://github.com/apache/commons-lang/pull/1699) | Apache-2.0 | `e6b8bbd39505694012d869fa2107ef068b88d800` | `2240c1f93e5f96b12a83ec8615c29dfac46258e9` | 跨两个生产 API 的溢出边界 |
+| `commons-collections-int-value` | Apache Commons Collections | [PR 704](https://github.com/apache/commons-collections/pull/704) | Apache-2.0 | `b219ccbe7b95250abd3ba3143edf340b7fad1943` | `6171ecbb1dc89f3e2d3bae659b6364995fbc6027` | 数值数据转换 |
+| `commons-collections-flat3map-entry` | Apache Commons Collections | [PR 714](https://github.com/apache/commons-collections/pull/714) | Apache-2.0 | `68a3c306d81dffe5bad59443dba3a7f5513178f4` | `14375bdba38421c174d646c40b8b757cce52dd45` | Collection Entry 条件语义 |
 
-Each fixture starts from the exact buggy commit, applies only the upstream regression-test
-change, proves production code still matches the buggy commit, and creates a deterministic
-local benchmark commit. The validation-only production Patch is derived from the upstream
-fix and proves baseline FAIL → target PASS → regression PASS. It is never included in the
-Agent prompt, tool output, trace, or trajectory. See
-[`docs/REAL_WORLD_BENCHMARK.md`](../REAL_WORLD_BENCHMARK.md) for selection and construction
-details.
+每个 Fixture 从准确 Buggy Commit 开始，只应用上游回归测试变更，证明生产代码仍匹配 Buggy Commit，再创建确定性本地 Benchmark Commit。仅验证可见的生产 Patch 来自上游 Fix，并证明 `baseline FAIL → target PASS → regression PASS`；它不会进入 Agent Prompt、工具结果、Trace 或 Trajectory。
 
-## Aggregate comparison
+## 汇总对比
 
-| Metric | `z-ai/glm-5.2` | `openai/gpt-5-mini` |
+| 指标 | `z-ai/glm-5.2` | `openai/gpt-5-mini` |
 |---|---:|---:|
-| Assigned attempts | 3 | 3 |
-| Provider accepted / rejected | 3 / 0 | 0 / 3 |
-| Model executed / model tool-call attempts | 3 / 3 | 0 / 0 |
-| Resolved attempts | 2/3 | 0/3 |
-| System end-to-end rate | 0.667 | 0.000 |
-| System descriptive 95% Wilson interval | [0.208, 0.939] | [0.000, 0.561] |
-| Capability rate | 0.667 | N/A |
-| Capability descriptive 95% Wilson interval | [0.208, 0.939] | N/A |
-| Cases resolved at least once | 2/3 | 0/3 |
-| Baseline failures reproduced | 3/3 | 3/3 |
-| Target / regression PASS | 3 / 2 | 0 / 0 |
-| Model turns / requests / API errors | 27 / 27 / 0 | 3 / 3 / 3 |
-| Generated / executed / discarded tool calls | 28 / 27 / 1 | 0 / 0 / 0 |
-| Tool-call discard rate | 3.57% | 0.0% |
-| Patch attempts / rejected attempts | 6 / 2 | 0 / 0 |
-| Normalization / recount-used attempts | 0 / 1 | 0 / 0 |
-| Tokens (input / output / reasoning) | 218,835 / 14,510 / 14,504 | 0 / 0 / 0 |
-| Average model latency | 288.294s | 0.000s |
-| Average test duration | 489.750s | 61.521s |
-| Average wall-clock duration | 792.677s | 70.922s |
-| Average final Patch size | 788.667 bytes | 0 bytes |
-| Original-repository integrity | 3/3 | 3/3 |
+| 分配尝试 | 3 | 3 |
+| Provider 接受 / 拒绝 | 3 / 0 | 0 / 3 |
+| 模型执行 / 模型 Tool Call Attempt | 3 / 3 | 0 / 0 |
+| `RESOLVED` | 2/3 | 0/3 |
+| 系统端到端率 | 0.667 | 0.000 |
+| 系统描述性 Wilson 95% 区间 | [0.208, 0.939] | [0.000, 0.561] |
+| 模型能力率 | 0.667 | N/A |
+| 能力描述性 Wilson 95% 区间 | [0.208, 0.939] | N/A |
+| 至少解决一次的 Case | 2/3 | 0/3 |
+| 基线复现 | 3/3 | 3/3 |
+| 目标 / 回归 PASS | 3 / 2 | 0 / 0 |
+| 模型 Turns / Requests / API Errors | 27 / 27 / 0 | 3 / 3 / 3 |
+| Tool Calls 生成 / 执行 / 丢弃 | 28 / 27 / 1 | 0 / 0 / 0 |
+| Tool Call 丢弃率 | 3.57% | 0.0% |
+| Patch 尝试 / 拒绝 | 6 / 2 | 0 / 0 |
+| 规范化 / Recount Run | 0 / 1 | 0 / 0 |
+| Tokens（Input / Output / Reasoning） | 218,835 / 14,510 / 14,504 | 0 / 0 / 0 |
+| 平均模型延迟 | 288.294s | 0.000s |
+| 平均测试耗时 | 489.750s | 61.521s |
+| 平均墙钟耗时 | 792.677s | 70.922s |
+| 平均 Final Patch 大小 | 788.667 bytes | 0 bytes |
+| 原始仓库完整性 | 3/3 | 3/3 |
 
-As in the MVP matrix, every GPT-5 Mini attempt was rejected by the upstream provider with
-HTTP 403 for provider Terms of Service before a tool call. Those `MODEL_API_ERROR`
-observations are not evidence about repair quality and make a capability head-to-head
-comparison impossible for this run. They are three assigned, three Provider-rejected,
-and zero model-executed attempts; GPT capability and its capability interval are N/A.
+与 MVP R3 一样，GPT-5 Mini 的请求在模型 Tool Call 前因 Provider Terms of Service 返回 HTTP 403。三个 `MODEL_API_ERROR` 只代表端到端服务拒绝，不是修复质量证据。按修正后的口径，它有三次分配、三次 Provider 拒绝、零次模型执行，因此能力率与区间为 `N/A`。
 
-## Complete attempt evidence
+## 完整 Attempt 证据
 
-Tokens are `input/output/reasoning`.
+Tokens 格式为 `input/output/reasoning`。
 
-| Seq | Model | Case | Final | Target | Regression | Turns | Tools | Patches | Tokens | Duration | Failure | Normalize | Recount |
+| Seq | 模型 | Case | 终态 | 目标 | 回归 | Turns | Tools | Patches | Tokens | Duration | 主要失败 | 规范化 | Recount |
 |---:|---|---|---|---|---|---:|---:|---:|---:|---:|---|---|---|
-| 1 | `openai/gpt-5-mini` | `commons-lang-mid-overflow` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 95.406s | MODEL_API | no | no |
+| 1 | `openai/gpt-5-mini` | `commons-lang-mid-overflow` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 95.406s | PROVIDER_REJECTED | no | no |
 | 2 | `z-ai/glm-5.2` | `commons-lang-mid-overflow` | AGENT_BUDGET_EXHAUSTED | PASS | FAIL | 18 | 18 | 3 | 189069/13485/13778 | 1456.922s | REGRESSION_UNRESOLVED | no | yes |
-| 3 | `z-ai/glm-5.2` | `commons-collections-int-value` | RESOLVED | PASS | PASS | 3 | 3 | 1 | 7291/385/342 | 518.313s | RESOLVED | no | no |
-| 4 | `openai/gpt-5-mini` | `commons-collections-int-value` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 54.422s | MODEL_API | no | no |
-| 5 | `openai/gpt-5-mini` | `commons-collections-flat3map-entry` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 62.937s | MODEL_API | no | no |
-| 6 | `z-ai/glm-5.2` | `commons-collections-flat3map-entry` | RESOLVED | PASS | PASS | 6 | 6 | 2 | 22475/640/384 | 402.797s | RESOLVED | no | no |
+| 3 | `z-ai/glm-5.2` | `commons-collections-int-value` | RESOLVED | PASS | PASS | 3 | 3 | 1 | 7291/385/342 | 518.313s | — | no | no |
+| 4 | `openai/gpt-5-mini` | `commons-collections-int-value` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 54.422s | PROVIDER_REJECTED | no | no |
+| 5 | `openai/gpt-5-mini` | `commons-collections-flat3map-entry` | MODEL_API_ERROR | NOT_RUN | NOT_RUN | 1 | 0 | 0 | 0/0/0 | 62.937s | PROVIDER_REJECTED | no | no |
+| 6 | `z-ai/glm-5.2` | `commons-collections-flat3map-entry` | RESOLVED | PASS | PASS | 6 | 6 | 2 | 22475/640/384 | 402.797s | — | no | no |
 
-The Commons Lang attempt visibly exercised feedback-driven replanning. Its first accepted
-candidate passed the target but failed the regression suite, so RepoSuture reverted it and
-returned the failure to the Agent. A later Patch was policy-rejected, another accepted
-candidate again passed the target and failed regression, and the run ended at the fixed
-18-turn budget. The final status remained `AGENT_BUDGET_EXHAUSTED`; the aggregate failure
-classifier now retains `REGRESSION_UNRESOLVED` as the primary failure. The later
-`SEARCH_TOOL_ERROR` and `BUDGET_EXHAUSTED` remain ordered observed failures rather than
-overwriting stronger verification evidence. No false `RESOLVED` occurred.
+Commons Lang 运行明确展示了反馈驱动的重新规划：第一个候选目标 PASS、回归 FAIL，因此 Runtime 回滚并返回失败；后续 Patch 被策略拒绝，另一个候选再次目标 PASS、回归 FAIL，最后在固定 18 Turn 预算终止。终态为 `AGENT_BUDGET_EXHAUSTED`，主要原因保留为 `REGRESSION_UNRESOLVED`；后续 `SEARCH_TOOL_ERROR` 与 `BUDGET_EXHAUSTED` 只作为有序观察事件存在，没有产生错误的 `RESOLVED`。
 
-The Flat3Map attempt's first malformed Patch failed the strict and recount checks. The Agent
-received the structured rejection, submitted a second Patch, and then passed target and
-regression tests. The accepted Patch did not require recount.
+Flat3Map 的第一个畸形 Patch 未通过严格和 Recount 检查。Agent 收到结构化拒绝后提交第二个 Patch，目标与回归均通过；最终被接受 Patch 不需要 Recount。
 
-Executed GLM tool usage was `search_code=10`, `read_file=9`, `apply_patch=6`,
-`list_files=1`, and `run_target_test=1`. Terminal statuses were `RESOLVED=2` and
-`AGENT_BUDGET_EXHAUSTED=1` for GLM, plus `MODEL_API_ERROR=3` for GPT-5 Mini. Primary
-failures were `REGRESSION_UNRESOLVED=1` and `PROVIDER_REJECTED=3`.
+GLM 已执行工具：`search_code=10`、`read_file=9`、`apply_patch=6`、`list_files=1`、`run_target_test=1`。
 
-## Integrity and limitations
+终态与主要失败：
 
-Real Maven and JUnit executed for every baseline and every accepted candidate. All six
-reports used the same clean commit, suite fingerprint, public Case text, budgets, tools,
-Patch policy, endpoint, and correctness oracle. Every worktree was removed, upstream
-caches remained unchanged, and original repository integrity was 6/6.
+- GLM：`RESOLVED=2`、`AGENT_BUDGET_EXHAUSTED=1`
+- GPT-5 Mini：`MODEL_API_ERROR=3`
+- `REGRESSION_UNRESOLVED=1`
+- `PROVIDER_REJECTED=3`
 
-Strict `--resume` reused all six completed observations without another API request.
-Credential, Authorization-header, and Agent-visible hidden-fix scans returned zero
-matches. No third-party clone, raw Patch, raw provider body, complete Maven log, or live
-artifact directory is committed.
+## 完整性与限制
 
-Windows build speed materially affected duration: the relevant Apache regression suites
-are much larger than the MVP fixtures. One run per Case/model and two upstream projects are
-far too small for broad generalization.
+每个基线和被接受候选都执行真实 Maven/JUnit。六个报告使用相同干净 Commit、Suite 指纹、公开 Case、预算、工具、Patch 策略、Endpoint 和正确性判据。所有 worktree 已移除，上游缓存未变，原始仓库完整性为 6/6。
 
-The sanitized machine-readable summary is
-[`reposuture-real-world-r1-summary.json`](reposuture-real-world-r1-summary.json).
+严格 `--resume` 在不发起新 API 请求的情况下复用六个完整观察。凭据、Authorization Header 和 Agent 可见隐藏 Fix 扫描均为 0 匹配。未提交第三方 Clone、原始 Patch、原始 Provider Body、完整 Maven 日志或 live 产物。
+
+Windows 构建速度显著影响耗时；Apache 回归 Suite 远大于 MVP Fixture。每个 Case/模型只有一次，且只覆盖两个上游项目，不能进行广泛推断。
+
+脱敏机器摘要：[`reposuture-real-world-r1-summary.json`](reposuture-real-world-r1-summary.json)

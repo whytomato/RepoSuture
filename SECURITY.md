@@ -1,35 +1,34 @@
-# Security Policy
+# 安全策略
 
-RepoSuture is a portfolio and research engineering project. It is not presented as a
-production security boundary. Reports about command execution, path escape, credential
-exposure, Patch-policy bypass, worktree isolation, rollback, or artifact-integrity failures
-are nevertheless taken seriously.
+RepoSuture 是作品集与研究性质的工程项目，不宣称自己是生产级安全边界。与命令执行、路径逃逸、凭据暴露、Patch 策略绕过、worktree 隔离、回滚或产物完整性有关的问题仍会被认真处理。
 
-## Reporting a security issue
+## 报告安全问题
 
-Use the [public repository issue tracker](https://github.com/whytomato/RepoSuture/issues)
-to request security coordination. In the initial public issue, include only a short impact
-summary and the affected RepoSuture version or commit. Do not publish exploit details,
-private repository content, API keys, authorization headers, credentials, sensitive traces,
-raw provider payloads, or other secrets. The maintainer can use the issue to arrange an
-appropriate follow-up channel before sensitive reproduction details are shared.
+请通过[公开仓库 Issue Tracker](https://github.com/whytomato/RepoSuture/issues)发起安全协调。首个公开 Issue 只应包含简短影响说明，以及受影响的 RepoSuture 版本或 Commit。
 
-For non-sensitive hardening defects whose complete reproduction is safe to publish, a normal
-GitHub issue is appropriate. Please state the operating system, Python/Java versions, exact
-RepoSuture commit, and whether the source tree was clean, while redacting user-specific paths
-and all credentials.
+不要在公开 Issue 中提供：
 
-## Scope
+- 利用细节；
+- 私有仓库内容；
+- API Key、Authorization Header 或其他凭据；
+- 敏感 Trace；
+- 原始 Provider Payload；
+- 其他秘密信息。
 
-Especially useful reports include:
+Maintainer 可通过该 Issue 协调后续安全渠道，再接收敏感复现细节。
 
-- execution outside RepoSuture's fixed argument-array subprocess policy;
-- repository, worktree, symlink, junction, or artifact path containment escapes;
-- API key, authorization header, private source, raw Patch, or hidden-reasoning disclosure;
-- modification of tests, build files, Maven Wrapper files, CI, or disallowed paths;
-- partial Patch application, failed rollback, or mutation of the original repository;
-- report, trace, trajectory, final-Patch, size, or SHA-256 integrity inconsistencies;
-- a `RESOLVED` result not supported by real Git, Maven, and JUnit evidence.
+对可以安全公开完整复现的非敏感加固问题，可直接提交普通 GitHub Issue。请说明操作系统、Python/Java 版本、准确 RepoSuture Commit，以及源码树是否干净；同时删除用户路径和全部凭据。
 
-Do not test against repositories or services you do not own or have explicit permission to
-use. Revoke exposed credentials with their provider rather than including them in a report.
+## 关注范围
+
+特别有价值的问题包括：
+
+- 绕过固定参数数组子进程策略而执行命令；
+- 仓库、worktree、symlink、junction 或产物路径逃逸；
+- API Key、Authorization Header、私有源码、原始 Patch 或隐藏推理泄露；
+- 修改测试、构建文件、Maven Wrapper、CI 或其他禁止路径；
+- Patch 部分应用、回滚失败或原始仓库被修改；
+- Report、Trace、Trajectory、Final Patch、文件大小或 SHA-256 不一致；
+- 缺少真实 Git、Maven、JUnit 证据却得到 `RESOLVED`。
+
+不要测试无权使用的仓库或服务。凭据一旦暴露，请直接在 Provider 侧撤销，而不是把它写入报告。

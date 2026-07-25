@@ -1,48 +1,49 @@
-# Live pagination repair with Patch rejection and replanning
+# 真实分页修复：Patch 拒绝与重新规划
 
-> Generated under the former project name PatchPilot; the project was subsequently
-> renamed to RepoSuture.
+> 本轨迹生成时项目仍名为 PatchPilot，之后更名为 RepoSuture。历史指标和标识未修改。
 
-> **LIVE MODEL DEMONSTRATION**
->
-> This is a sanitized replay of one genuine OpenRouter `z-ai/glm-5.2` run. It demonstrates
-> the Agent harness and one feedback-driven recovery. One run is not a statistically robust
-> capability estimate, and this document contains no raw Patch or hidden reasoning.
+**真实模型演示**
 
-- PatchPilot commit: `944fc6aab83c64848c4eae11f291db80ebc69041`
-- Benchmark fingerprint:
-  `20709966636b87d77e5a50fd0026557d405c7aa94955824ec80abb5e986a9ff0`
-- Case: `pagination-boundary`
-- Provider/model: OpenRouter-compatible Responses API / `z-ai/glm-5.2`
-- Final deterministic status: `RESOLVED`
+本示例来自一次真实 OpenRouter GLM-5.2 运行，不是 scripted 结果。它展示 Agent Harness、结构化 Patch 拒绝反馈和确定性验证，但单次成功不代表稳定成功率或通用修复能力。
+
+- Commit：`944fc6aab83c64848c4eae11f291db80ebc69041`
+- Case：`pagination-boundary`
+- 模型：`z-ai/glm-5.2`
+- 最终状态：`RESOLVED`
+- 基准指纹：`20709966636b87d77e5a50fd0026557d405c7aa94955824ec80abb5e986a9ff0`
 
 ```text
-[PREPARE] Creating isolated worktree at commit 08a837f9
-[VERIFY]  Baseline target test ............................ FAIL
-[PREPARE] Failure reproduced; Agent execution started
-[TURN 1/12] DECIDE
-[ACTION]  search_code query="CatalogPaginator" path="." file_type="java"
-[OBSERVE] search_code returned 3 matches; truncated=false
-[TURN 2/12] DECIDE
-[ACTION]  read_file path="src/main/java/dev/patchpilot/fixture/CatalogPaginator.java"
-[OBSERVE] read_file returned 18 lines, 601 bytes; truncated=false
-[TURN 3/12] DECIDE
-[ACTION]  apply_patch patch_size=564
-[OBSERVE] Patch attempt 1 rejected; error_code=PATCH_GIT_RECOUNT_FAILED
-[REPLAN] Patch rejection diagnostic returned to Agent reasons=PATCH_REJECTED
-[TURN 4/12] DECIDE
-[ACTION]  read_file path="src/main/java/dev/patchpilot/fixture/CatalogPaginator.java"
-[OBSERVE] read_file returned 18 lines, 601 bytes; truncated=false
-[TURN 5/12] DECIDE
-[ACTION]  apply_patch patch_size=539
-[OBSERVE] Patch attempt 2 accepted; 1 production file changed
-[VERIFY]  Target test (Patch 2) ........................... PASS
-[VERIFY]  Regression suite (Patch 2) ...................... PASS
+[PREPARE] 创建固定 Commit 的隔离 worktree
+[VERIFY]  基线目标测试 ............................... FAIL
+[PREPARE] 已复现失败；启动 Agent
+
+[TURN 1] DECIDE
+[ACTION]  search_code
+[OBSERVE] 返回有界搜索结果
+
+[TURN 2] DECIDE
+[ACTION]  read_file
+[OBSERVE] 返回相关源码区域
+
+[TURN 3] DECIDE
+[ACTION]  apply_patch attempt=1
+[OBSERVE] Patch 被拒绝：PATCH_GIT_RECOUNT_FAILED
+[REPLAN]  拒绝诊断与剩余预算返回 Agent
+
+[TURN 4] DECIDE
+[ACTION]  read_file
+[OBSERVE] 再次读取相关源码区域
+
+[TURN 5] DECIDE
+[ACTION]  apply_patch attempt=2
+[OBSERVE] Patch 被接受；修改 1 个生产文件
+[VERIFY]  目标测试 ................................... PASS
+[VERIFY]  回归测试 ................................... PASS
+
 [FINISH]  RESOLVED
-          turns=5 tools=5 patches=2 duration=63.2s
+          turns=5 tools=5 patches=2 duration=63.187s
 ```
 
-The first malformed candidate did not modify the worktree and did not trigger tests. The
-second candidate passed Git/path/policy validation before real Maven/JUnit ran. `RESOLVED`
-came only from the target and full regression results. The full evaluation is documented in
-[`../results/openrouter-glm-5.2-live-r1.md`](../results/openrouter-glm-5.2-live-r1.md).
+第一次 Patch 在严格检查与有限 `--recount` 检查中都失败，且没有修改 worktree，也没有触发测试。Agent 收到有界错误后重新读取文件并提交第二个 Patch；只有真实目标与回归测试通过后，运行才得到 `RESOLVED`。
+
+该运行属于历史 [OpenRouter GLM-5.2 R1 报告](../results/openrouter-glm-5.2-live-r1.md)。
